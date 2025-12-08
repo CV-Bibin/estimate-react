@@ -3,6 +3,15 @@ import { Plus, Trash2 } from 'lucide-react';
 
 export default function EstimationTable({ index, item, rows, onUpdateRows, calculateTotal, calculateQty }) {
   
+  // --- HELPER: HIGHLIGHT ZERO/EMPTY CELLS IN TABLE ---
+  const getTableZeroStyle = (val) => {
+    const v = parseFloat(val);
+    // If value is 0, empty, or NaN -> Red Warning Style
+    if (!val || v === 0) return "bg-red-50 text-red-600 border border-red-200 font-bold placeholder-red-300";
+    // Normal Style
+    return "bg-gray-50 text-gray-800 border-transparent";
+  };
+
   const addRow = () => { onUpdateRows([...rows, { id: Date.now() + Math.random(), desc: '', nos: 1, l: 0, b: 0, d: 0, unit: 'm3' }]); };
   const removeRow = (rowId) => { onUpdateRows(rows.filter(row => row.id !== rowId)); };
   const updateRow = (rowId, field, value) => { onUpdateRows(rows.map(row => row.id === rowId ? { ...row, [field]: value } : row)); };
@@ -42,12 +51,13 @@ export default function EstimationTable({ index, item, rows, onUpdateRows, calcu
                 <tr key={row.id} className="group hover:bg-blue-50/20 transition-colors">
                   <td className="p-2"><textarea rows={1} className="w-full bg-transparent border border-transparent hover:border-gray-200 focus:border-blue-500 rounded px-2 py-1 outline-none font-medium resize-none" placeholder="Description" value={row.desc} onChange={(e) => updateRow(row.id, 'desc', e.target.value)} /></td>
                   <td className="p-2"><input type="number" className="w-full text-center bg-gray-50 rounded px-1 py-1 outline-none" value={row.nos} onChange={(e) => updateRow(row.id, 'nos', e.target.value)} /></td>
-                  <td className="p-2"><input type="number" className="w-full text-center bg-gray-50 rounded px-1 py-1 outline-none" value={row.l} onChange={(e) => updateRow(row.id, 'l', e.target.value)} /></td>
-                  <td className="p-2"><input type="number" className="w-full text-center bg-gray-50 rounded px-1 py-1 outline-none" value={row.b} onChange={(e) => updateRow(row.id, 'b', e.target.value)} /></td>
-                  <td className="p-2"><input type="number" className="w-full text-center bg-gray-50 rounded px-1 py-1 outline-none" value={row.d} onChange={(e) => updateRow(row.id, 'd', e.target.value)} /></td>
-                  {/* QTY is now BEFORE Unit */}
+                  
+                  {/* Applied getTableZeroStyle to L, B, D inputs */}
+                  <td className="p-2"><input type="number" className={`w-full text-center rounded px-1 py-1 outline-none border ${getTableZeroStyle(row.l)}`} value={row.l} onChange={(e) => updateRow(row.id, 'l', e.target.value)} /></td>
+                  <td className="p-2"><input type="number" className={`w-full text-center rounded px-1 py-1 outline-none border ${getTableZeroStyle(row.b)}`} value={row.b} onChange={(e) => updateRow(row.id, 'b', e.target.value)} /></td>
+                  <td className="p-2"><input type="number" className={`w-full text-center rounded px-1 py-1 outline-none border ${getTableZeroStyle(row.d)}`} value={row.d} onChange={(e) => updateRow(row.id, 'd', e.target.value)} /></td>
+                  
                   <td className="p-2 text-right font-bold text-gray-700 pr-4">{row.unit === 'Hrs' || row.qtyOverride ? (<input type="number" className="w-full text-right bg-transparent font-bold text-blue-600 outline-none" defaultValue={calculateQty(row)} onChange={(e) => updateRow(row.id, 'qtyOverride', parseFloat(e.target.value))} />) : calculateQty(row)}</td>
-                  {/* UNIT is now LAST */}
                   <td className="p-2"><select className="w-full text-center bg-yellow-50 border border-yellow-100 text-yellow-800 rounded px-1 py-1 outline-none font-bold text-xs" value={row.unit} onChange={(e) => updateRow(row.id, 'unit', e.target.value)}><option value="m3">m³</option><option value="m2">m²</option><option value="m">m</option><option value="Hrs">Hrs</option><option value="Nos">Nos</option><option value="Kg">Kg</option></select></td>
                   <td className="p-2 text-center"><button onClick={() => removeRow(row.id)} className="text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all"><Trash2 size={16} /></button></td>
                 </tr>

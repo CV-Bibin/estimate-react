@@ -8,7 +8,8 @@ import { GripVertical, Trash2, ArrowRight } from 'lucide-react';
 const MAIN_CONSTRUCTION_STEPS = [
   "Site Clearance & Marking",
   "Earthwork Excavation",
-  "Foundation & Basement Works",          // Merged PCC, Footings/RR, & Filling
+  "Foundation & Basement Works", 
+  "Earthfilling inside basement and footings",         // Merged PCC, Footings/RR, & Filling
   "Superstructure Masonry (Walls)",
   "Doors, Windows & Openings",            // Merged Frames, Shutters, Glass, Grills
   "Lintels, Sunshades & Lofts",

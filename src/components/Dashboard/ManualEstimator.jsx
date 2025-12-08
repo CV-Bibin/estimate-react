@@ -1,37 +1,28 @@
 import React, { useState, useEffect } from 'react';
-import { FileDown, Settings2, Hammer, PaintBucket, Layers, AlertTriangle } from 'lucide-react';
+import { FileDown, Settings2, Layers, AlertTriangle, Hammer, PaintBucket } from 'lucide-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
-
-// Components
 import ProjectSetup from './ProjectSetup';
 import SubStructure from './Phases/SubStructure';
 import SuperStructure from './Phases/SuperStructure';
 import Finishing from './Phases/Finishing';
 
-// Logic
-import { getSiteClearanceRows, getExcavationRows, getFoundationRows } from '../../utils/estimationRules';
+// IMPORT NEW FUNCTION
+import { getSiteClearanceRows, getExcavationRows, getFoundationRows, getEarthFillingRows } from '../../utils/estimationRules';
 
 export default function ManualEstimator({ workItems = [], projectData = {} }) {
   
   const [activeTab, setActiveTab] = useState('Sub Structure');
   const [showAutoFill, setShowAutoFill] = useState(true);
   
-  // --- ROBUST STATE INITIALIZATION ---
   const [globalParams, setGlobalParams] = useState({
-    extLen: '', extWidth: 0.23,
-    intLen: '', intWidth: 0.23,
-    customWalls: [],    // Always start as empty array
-    openAreas: [],      // Always start as empty array
-    columnGroups: [],   // Always start as empty array
-    foundationType: 'RR', 
-    numFloors: 1, 
-    floorNames: ['Ground Floor']
+    extLen: '', extWidth: 0.23, intLen: '', intWidth: 0.23,
+    customWalls: [], openAreas: [], columnGroups: [],
+    foundationType: 'RR', numFloors: 1, floorNames: ['Ground Floor']
   });
 
   const [measurements, setMeasurements] = useState({});
 
-  // Initialize measurements safely
   useEffect(() => {
     if (workItems && workItems.length > 0 && Object.keys(measurements).length === 0) {
       const initialData = workItems.reduce((acc, item) => ({ 
@@ -47,12 +38,10 @@ export default function ManualEstimator({ workItems = [], projectData = {} }) {
     if (!row) return "0.00";
     if (row.isHeader) return ""; 
     if (row.qtyOverride) return parseFloat(row.qtyOverride).toFixed(2);
-    
     const l = parseFloat(row.l) || 0;
     const b = parseFloat(row.b) || 0;
     const d = parseFloat(row.d) || 0;
     const nos = parseFloat(row.nos) || 0;
-
     let val = 0;
     if (row.unit === 'm2') val = nos * l * b;
     else if (row.unit === 'm') val = nos * l;
@@ -66,9 +55,7 @@ export default function ManualEstimator({ workItems = [], projectData = {} }) {
     return measurements[itemId]?.reduce((sum, row) => sum + (row.isHeader ? 0 : parseFloat(calculateQty(row)) || 0), 0).toFixed(2);
   };
 
-  // --- AUTO-FILL ---
   const handleAutoFill = () => {
-    // Safety Checks
     const ext = parseFloat(globalParams.extLen) || 0;
     const int = parseFloat(globalParams.intLen) || 0;
     const customSum = (globalParams.customWalls || []).reduce((sum, w) => sum + (parseFloat(w.length) || 0), 0);
@@ -78,9 +65,20 @@ export default function ManualEstimator({ workItems = [], projectData = {} }) {
 
     workItems.forEach(item => {
         const title = (item.title || "").toLowerCase();
-        if (title.includes("site")) newMeasurements[item.id] = getSiteClearanceRows();
-        else if (title.includes("excavation") || title.includes("earthwork")) newMeasurements[item.id] = getExcavationRows(globalParams, totalWallLen);
-        else if (title.includes("pcc") || title.includes("foundation")) newMeasurements[item.id] = getFoundationRows(globalParams, totalWallLen);
+        
+        if (title.includes("site")) {
+             newMeasurements[item.id] = getSiteClearanceRows();
+        }
+        else if (title.includes("excavation") || title.includes("earthwork")) {
+             newMeasurements[item.id] = getExcavationRows(globalParams, totalWallLen);
+        }
+        else if (title.includes("pcc") || title.includes("foundation")) {
+             newMeasurements[item.id] = getFoundationRows(globalParams, totalWallLen);
+        }
+        // FILLING LOGIC
+        else if (title.includes("filling") || title.includes("earth")) {
+             newMeasurements[item.id] = getEarthFillingRows(globalParams, totalWallLen);
+        }
     });
 
     setMeasurements(newMeasurements);
@@ -97,9 +95,10 @@ export default function ManualEstimator({ workItems = [], projectData = {} }) {
     let yPos = 50;
     workItems.forEach((item, index) => {
       const itemRows = measurements[item.id] || [];
-      if (itemRows.length === 0) return;
+      const validRows = itemRows.filter(row => row.isHeader || calculateQty(row) !== "0.00");
+      if (validRows.length === 0) return;
 
-      const tableRows = itemRows.map(row => {
+      const tableRows = validRows.map(row => {
           if (row.isHeader) return [{ content: row.desc, colSpan: 7, styles: { fillColor: [220, 220, 220], fontStyle: 'bold', halign: 'center' } }];
           return [row.desc || '-', row.nos, row.l, row.b, row.d, calculateQty(row), row.unit];
       });
@@ -121,7 +120,7 @@ export default function ManualEstimator({ workItems = [], projectData = {} }) {
     if (!title) return 'Super Structure';
     const t = title.toLowerCase();
     if (t.includes('site') || t.includes('excavation') || t.includes('earth') || t.includes('foundation') || t.includes('pcc') || t.includes('footing') || t.includes('plinth') || t.includes('basement')) return 'Sub Structure';
-    if (t.includes('plaster') || t.includes('paint') || t.includes('floor') || t.includes('tile') || t.includes('electr') || t.includes('plumb') || t.includes('wood') || t.includes('window') || t.includes('door')) return 'Finishing';
+    if (t.includes('plaster') || t.includes('paint') || t.includes('floor') || t.includes('tile') || t.includes('electr') || t.includes('plumb') || t.includes('wood') || t.includes('window') || t.includes('door') || t.includes('finish')) return 'Finishing';
     return 'Super Structure';
   };
 
@@ -130,9 +129,7 @@ export default function ManualEstimator({ workItems = [], projectData = {} }) {
   const finishingItems = workItems.filter(item => getCategory(item.title) === 'Finishing');
   const phaseProps = { measurements, updateMeasurements, calculateTotal, calculateQty };
 
-  if (!workItems || workItems.length === 0) {
-      return <div className="flex flex-col items-center justify-center h-64 text-gray-400"><AlertTriangle size={48} className="mb-4 text-yellow-500" /><h3 className="text-lg font-bold">No Work Items Found</h3></div>;
-  }
+  if (!workItems || workItems.length === 0) return <div className="flex flex-col items-center justify-center h-64 text-gray-400"><AlertTriangle size={48} className="mb-4 text-yellow-500" /><h3 className="text-lg font-bold">No Work Items Found</h3></div>;
 
   return (
     <div className="max-w-7xl mx-auto pb-20">
