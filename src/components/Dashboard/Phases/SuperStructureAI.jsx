@@ -1,10 +1,9 @@
 import React from 'react';
 import { Image, Cpu, MousePointer } from 'lucide-react';
 
-// NOTE: This function simulates receiving calculated room/wall data from a backend AI service.
-export default function SuperStructureAI({ globalParams, setGlobalParams }) {
+export default function SuperStructureAI({ globalParams, setAiSuperStructureData, aiData }) {
     
-    // --- MOCK AI OUTPUT DATA ---
+    // --- MOCK AI OUTPUT DATA (Only used to simulate AI result) ---
     const mockAIData = {
         // AI provides the final structural lengths
         extLen: "22.5", 
@@ -25,28 +24,18 @@ export default function SuperStructureAI({ globalParams, setGlobalParams }) {
         // Total calculated roof area (sum of all rooms + sit-outs)
         totalSlabArea: 70.0,
         
-        // Total Column volume/count (Can be refined later)
-        columnGroups: globalParams.columnGroups.length > 0 ? globalParams.columnGroups : [
+        // FIX: Provide the AI's calculated column structure directly.
+        columnGroups: [
             { id: 1, type: 'Conceiled', name: 'AI Detected 23x30', count: 12, f_l: 1.2, f_b: 1.5, f_d: 1.5, c_l: 0.23, c_b: 0.30 },
+            { id: 2, type: 'Open', name: 'AI Detected Open 23x23', count: 4, f_l: 1.0, f_b: 1.0, f_d: 1.2, c_l: 0.23, c_b: 0.23 },
         ]
     };
 
     const handleIntegrateData = () => {
-        // In a real application, you would update a specific SuperStructure state here.
-        // For now, we simulate updating the core globalParams that feed the rules.
+        // FIX: Now correctly updates the dedicated AI state
+        setAiSuperStructureData(mockAIData); 
 
-        setGlobalParams(prev => ({
-            ...prev,
-            extLen: mockAIData.extLen,
-            intLen: mockAIData.intLen,
-            customWalls: mockAIData.customWalls,
-            columnGroups: mockAIData.columnGroups,
-            
-            // Add a dedicated state for the area output needed for Super Structure
-            aiSuperStructureData: mockAIData 
-        }));
-
-        alert("AI data for Super Structure (Walls, Rooms, Slab Area) integrated. You can now auto-fill Super Structure items.");
+        alert("AI data for Super Structure (Walls, Rooms, Slab Area) integrated successfully. You can now process Super Structure items.");
     };
 
     return (
@@ -63,12 +52,14 @@ export default function SuperStructureAI({ globalParams, setGlobalParams }) {
             </div>
 
             <div className="bg-white p-3 rounded-lg border border-gray-100 text-sm">
-                <p className="font-bold text-gray-800 flex items-center gap-2"><Image size={16} className="text-green-500" /> AI Output Preview (Example)</p>
-                <ul className="list-disc list-inside text-gray-600 text-xs mt-2 pl-3">
-                    <li>Total Slab/Roof Area: {mockAIData.totalSlabArea} m²</li>
-                    <li>Total Wall Length (Ext/Int): {(parseFloat(mockAIData.extLen) + parseFloat(mockAIData.intLen)).toFixed(2)} m</li>
-                    <li>Number of Rooms Detected: {mockAIData.rooms.length}</li>
-                </ul>
+                <p className="font-bold text-gray-800 flex items-center gap-2">AI Status: {aiData ? 'Data READY' : 'Awaiting Scan'}</p>
+                {aiData && (
+                    <ul className="list-disc list-inside text-gray-600 text-xs mt-2 pl-3">
+                        <li>Total Slab/Roof Area: **{aiData.totalSlabArea} m²**</li>
+                        <li>Total AI Wall Length: **{(parseFloat(aiData.extLen) + parseFloat(aiData.intLen)).toFixed(2)} m**</li>
+                        <li>Number of Rooms Detected: **{aiData.rooms.length}**</li>
+                    </ul>
+                )}
             </div>
             
             <button 

@@ -10,16 +10,32 @@ import Finishing from './Phases/Finishing';
 // IMPORT NEW FUNCTION
 import { getSiteClearanceRows, getExcavationRows, getFoundationRows, getEarthFillingRows } from '../../utils/estimationRules';
 
+// IMPORT THE NEW AI COMPONENT (You must create this file: ./Phases/SuperStructureAI.jsx)
+import SuperStructureAI from './Phases/SuperStructureAI'; 
+
 export default function ManualEstimator({ workItems = [], projectData = {} }) {
   
   const [activeTab, setActiveTab] = useState('Sub Structure');
   const [showAutoFill, setShowAutoFill] = useState(true);
   
   const [globalParams, setGlobalParams] = useState({
-    extLen: '', extWidth: 0.23, intLen: '', intWidth: 0.23,
-    customWalls: [], openAreas: [], columnGroups: [],
-    foundationType: 'RR', numFloors: 1, floorNames: ['Ground Floor']
-  });
+  extLen: '', 
+  extWidth: 0.23, 
+  intLen: '', // CORRECT: Interior Length initialized as an empty string for user input
+  intWidth: 0.23, // CORRECT: Interior Width initialized to 0.23m
+  customWalls: [], 
+  openAreas: [], 
+  columnGroups: [],
+  foundationType: 'RR', 
+  numFloors: 1, 
+  floorNames: ['Ground Floor']
+});
+
+  // FIX 1: DEDICATED AI DATA STATE (Restored)
+  const [aiSuperStructureData, setAiSuperStructureData] = useState(null); 
+  
+  // FIX 2: ROOM DIMENSION STATE (Restored)
+  const [roomData, setRoomData] = useState({}); 
 
   const [measurements, setMeasurements] = useState({});
 
@@ -34,6 +50,14 @@ export default function ManualEstimator({ workItems = [], projectData = {} }) {
 
   const updateMeasurements = (itemId, newRows) => setMeasurements(prev => ({ ...prev, [itemId]: newRows }));
 
+  // FIX 3: Handler to update room data for a specific floor (Necessary for SuperStructure)
+  const updateRoomData = (floorName, updatedRooms) => {
+      setRoomData(prev => ({
+          ...prev,
+          [floorName]: updatedRooms
+      }));
+  };
+  
   const calculateQty = (row) => {
     if (!row) return "0.00";
     if (row.isHeader) return ""; 
@@ -127,7 +151,16 @@ export default function ManualEstimator({ workItems = [], projectData = {} }) {
   const subStructureItems = workItems.filter(item => getCategory(item.title) === 'Sub Structure');
   const superStructureItems = workItems.filter(item => getCategory(item.title) === 'Super Structure');
   const finishingItems = workItems.filter(item => getCategory(item.title) === 'Finishing');
-  const phaseProps = { measurements, updateMeasurements, calculateTotal, calculateQty };
+  
+  // FIX 4: PASS NEW PROPS
+  const phaseProps = { 
+    measurements, updateMeasurements, calculateTotal, calculateQty, 
+    floorNames: globalParams.floorNames,
+    globalParams: globalParams, 
+    aiData: aiSuperStructureData,
+    roomData, // Passed
+    updateRoomData // Passed
+  };
 
   if (!workItems || workItems.length === 0) return <div className="flex flex-col items-center justify-center h-64 text-gray-400"><AlertTriangle size={48} className="mb-4 text-yellow-500" /><h3 className="text-lg font-bold">No Work Items Found</h3></div>;
 
@@ -136,12 +169,21 @@ export default function ManualEstimator({ workItems = [], projectData = {} }) {
       <div className="flex justify-between items-end mb-6 sticky top-20 bg-gray-50 pt-4 pb-4 z-40 border-b border-gray-200">
         <div><h2 className="text-2xl font-bold text-gray-800">Measurement Entry</h2><p className="text-gray-500 text-sm">Phase: <span className="text-blue-600 font-bold">{activeTab}</span></p></div>
         <div className="flex gap-2">
-            <button onClick={() => setShowAutoFill(!showAutoFill)} className="bg-blue-100 text-blue-700 px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-blue-200 border border-blue-200 text-sm font-bold"><Settings2 size={16} /> Smart Setup</button>
+            {/* Toggle Smart Setup Button visibility (Only Sub Structure) */}
+            {activeTab === 'Sub Structure' && 
+                <button onClick={() => setShowAutoFill(!showAutoFill)} className="bg-blue-100 text-blue-700 px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-blue-200 border border-blue-200 text-sm font-bold"><Settings2 size={16} /> Smart Setup</button>
+            }
             <button onClick={generatePDF} className="bg-black text-white px-5 py-2 rounded-lg flex items-center gap-2 hover:bg-gray-800 shadow-xl text-sm font-bold"><FileDown size={16} /> Export PDF</button>
         </div>
       </div>
 
-      {showAutoFill && <ProjectSetup globalParams={globalParams} setGlobalParams={setGlobalParams} onApply={handleAutoFill} />}
+      {/* CONDITIONAL SETUP/AI INPUT */}
+      {/* 1. Sub Structure Setup (ProjectSetup is safe; uses globalParams) */}
+      {activeTab === 'Sub Structure' && showAutoFill && <ProjectSetup globalParams={globalParams} setGlobalParams={setGlobalParams} onApply={handleAutoFill} />}
+      
+      {/* 2. Super Structure AI Input (AI component now uses setAiSuperStructureData) */}
+      {activeTab === 'Super Structure' && <SuperStructureAI globalParams={globalParams} setAiSuperStructureData={setAiSuperStructureData} aiData={aiSuperStructureData} />}
+
 
       <div className="flex gap-4 mb-8 border-b border-gray-200 pb-1 overflow-x-auto">
         {[{ id: 'Sub Structure', icon: Layers, color: 'text-blue-600', border: 'border-blue-600' }, { id: 'Super Structure', icon: Hammer, color: 'text-orange-600', border: 'border-orange-600' }, { id: 'Finishing', icon: PaintBucket, color: 'text-purple-600', border: 'border-purple-600' }].map((tab) => (
