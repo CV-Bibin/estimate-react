@@ -10,33 +10,35 @@ import Finishing from './Phases/Finishing';
 // IMPORT NEW FUNCTION
 import { getSiteClearanceRows, getExcavationRows, getFoundationRows, getEarthFillingRows } from '../../utils/estimationRules';
 
-// IMPORT THE NEW AI COMPONENT (You must create this file: ./Phases/SuperStructureAI.jsx)
-import SuperStructureAI from './Phases/SuperStructureAI'; 
+// REMOVED: import SuperStructureAI from './Phases/SuperStructureAI'; 
+
+// IMPORT THE NEW DATA ENTRY ORCHESTRATOR
+import SuperstructureDataEntry from './Phases/SuperstructureDataEntry'; // NOTE: Assuming SuperstructureDataEntry wraps the new UI logic
 
 export default function ManualEstimator({ workItems = [], projectData = {} }) {
-  
+  
   const [activeTab, setActiveTab] = useState('Sub Structure');
   const [showAutoFill, setShowAutoFill] = useState(true);
   
+  // PRIMARY STRUCTURAL STATE (Sub Structure data)
   const [globalParams, setGlobalParams] = useState({
-  extLen: '', 
-  extWidth: 0.23, 
-  intLen: '', // CORRECT: Interior Length initialized as an empty string for user input
-  intWidth: 0.23, // CORRECT: Interior Width initialized to 0.23m
-  customWalls: [], 
-  openAreas: [], 
-  columnGroups: [],
-  foundationType: 'RR', 
-  numFloors: 1, 
-  floorNames: ['Ground Floor']
-});
+    extLen: '', 
+    extWidth: 0.23, 
+    intLen: '', // Interior Length (for user input)
+    intWidth: 0.23, // Interior Width (structural constant)
+    customWalls: [], 
+    openAreas: [], 
+    columnGroups: [],
+    foundationType: 'RR', 
+    numFloors: 1, 
+    floorNames: ['Ground Floor']
+  });
 
-  // FIX 1: DEDICATED AI DATA STATE (Restored)
-  const [aiSuperStructureData, setAiSuperStructureData] = useState(null); 
-  
-  // FIX 2: ROOM DIMENSION STATE (Restored)
+  // NEW STATE: STORES ALL MANUAL SUPER STRUCTURE INPUTS (Plinth Area, Openings, etc., mapped by floor)
+  const [manualSuperstructureData, setManualSuperstructureData] = useState({}); 
+
+  // NOTE: aiSuperStructureData state is removed as requested.
   const [roomData, setRoomData] = useState({}); 
-
   const [measurements, setMeasurements] = useState({});
 
   useEffect(() => {
@@ -50,7 +52,7 @@ export default function ManualEstimator({ workItems = [], projectData = {} }) {
 
   const updateMeasurements = (itemId, newRows) => setMeasurements(prev => ({ ...prev, [itemId]: newRows }));
 
-  // FIX 3: Handler to update room data for a specific floor (Necessary for SuperStructure)
+  // Handler to update room data (Placeholder for room dimension entry)
   const updateRoomData = (floorName, updatedRooms) => {
       setRoomData(prev => ({
           ...prev,
@@ -111,6 +113,7 @@ export default function ManualEstimator({ workItems = [], projectData = {} }) {
 
   const generatePDF = () => {
     const doc = new jsPDF();
+    // ... (PDF generation logic remains unchanged) ...
     doc.setFontSize(18); doc.setTextColor(41, 128, 185); doc.text("ESTIMATION REPORT", 14, 20);
     doc.setFontSize(10); doc.setTextColor(0, 0, 0);
     doc.text(`Project: ${projectData.projectName || 'New Project'}`, 14, 30);
@@ -152,14 +155,15 @@ export default function ManualEstimator({ workItems = [], projectData = {} }) {
   const superStructureItems = workItems.filter(item => getCategory(item.title) === 'Super Structure');
   const finishingItems = workItems.filter(item => getCategory(item.title) === 'Finishing');
   
-  // FIX 4: PASS NEW PROPS
   const phaseProps = { 
     measurements, updateMeasurements, calculateTotal, calculateQty, 
     floorNames: globalParams.floorNames,
     globalParams: globalParams, 
-    aiData: aiSuperStructureData,
-    roomData, // Passed
-    updateRoomData // Passed
+    // AI data reference is intentionally omitted
+    roomData, 
+    updateRoomData,
+    manualSuperstructureData,
+    setManualSuperstructureData
   };
 
   if (!workItems || workItems.length === 0) return <div className="flex flex-col items-center justify-center h-64 text-gray-400"><AlertTriangle size={48} className="mb-4 text-yellow-500" /><h3 className="text-lg font-bold">No Work Items Found</h3></div>;
@@ -177,12 +181,12 @@ export default function ManualEstimator({ workItems = [], projectData = {} }) {
         </div>
       </div>
 
-      {/* CONDITIONAL SETUP/AI INPUT */}
-      {/* 1. Sub Structure Setup (ProjectSetup is safe; uses globalParams) */}
+      {/* CONDITIONAL SETUP/DATA INPUT */}
+      {/* 1. Sub Structure Setup (ProjectSetup component) */}
       {activeTab === 'Sub Structure' && showAutoFill && <ProjectSetup globalParams={globalParams} setGlobalParams={setGlobalParams} onApply={handleAutoFill} />}
       
-      {/* 2. Super Structure AI Input (AI component now uses setAiSuperStructureData) */}
-      {activeTab === 'Super Structure' && <SuperStructureAI globalParams={globalParams} setAiSuperStructureData={setAiSuperStructureData} aiData={aiSuperStructureData} />}
+      {/* 2. Super Structure Data Entry (The new manual flow) */}
+      {activeTab === 'Super Structure' && <SuperstructureDataEntry floorNames={globalParams.floorNames} globalParams={globalParams} manualSuperstructureData={manualSuperstructureData} setManualSuperstructureData={setManualSuperstructureData} />}
 
 
       <div className="flex gap-4 mb-8 border-b border-gray-200 pb-1 overflow-x-auto">
