@@ -38,14 +38,25 @@ export default function ProjectSetup({ globalParams, setGlobalParams, onApply })
   // --- 2. CALCULATIONS ---
   const valExt = evaluateMath(extLen) || 0;
   const valInt = evaluateMath(intLen) || 0;
-  const customSum = customWalls.reduce((sum, w) => sum + (parseFloat(w?.length) || 0), 0);
+
+  // LOGIC 1: Sum of Custom Walls that CONTRIBUTE to Plinth (Not Exempt)
+  // This is used for the Foundation Length Calculation
+  const plinthRelevantCustomWallSum = customWalls.reduce((sum, w) => {
+      if (w.isPlinthExempt) return sum; // Skip if exempt
+      return sum + (parseFloat(w?.length) || 0);
+  }, 0);
+
+  // LOGIC 2: Total Wall Length (For display only - Includes ALL walls)
+  const totalCustomWallSum = customWalls.reduce((sum, w) => sum + (parseFloat(w?.length) || 0), 0);
+  const totalEnclosedWallLength = (valExt + valInt + totalCustomWallSum).toFixed(2);
   
   const structuralOpenLen = openAreas.reduce((sum, a) => {
       // Logic: Use Math evaluator on freeLen
       return a.includeInPlinth ? sum + evaluateMath(a.freeLen) : sum;
   }, 0);
   
-  const totalFoundationLength = (valExt + valInt + customSum + structuralOpenLen).toFixed(2);
+  // UPDATED FOUNDATION LENGTH: Uses plinthRelevantCustomWallSum instead of total custom sum
+  const totalFoundationLength = (valExt + valInt + plinthRelevantCustomWallSum + structuralOpenLen).toFixed(2);
   const totalCols = columnGroups.reduce((sum, g) => sum + (parseInt(g?.count) || 0), 0);
 
   const updateState = (updates) => setGlobalParams({ ...params, ...updates });
@@ -96,9 +107,28 @@ export default function ProjectSetup({ globalParams, setGlobalParams, onApply })
       updateState({ floorNames: newNames });
   };
   
-  // Walls
-  const addCustomWall = () => updateState({ customWalls: [...customWalls, { id: Date.now(), name: 'Partition Wall', length: 0, width: 0.15 }] });
-  const updateCustomWall = (id, field, value) => updateState({ customWalls: customWalls.map(w => w.id === id ? { ...w, [field]: value } : w) });
+  // Walls (UPDATED WITH PLINTH EXEMPT FLAG)
+  const addCustomWall = () => updateState({ 
+      customWalls: [...customWalls, { 
+          id: Date.now(), 
+          name: 'Partition Wall', 
+          length: 0, 
+          width: 0.15,
+          isPlinthExempt: false // Default: Included in Plinth
+      }] 
+  });
+  
+  const updateCustomWall = (id, field, value) => {
+      updateState({ customWalls: customWalls.map(w => w.id === id ? { ...w, [field]: value } : w) });
+  };
+
+  // NEW HANDLER: Toggle Plinth Exempt
+  const togglePlinthExempt = (id) => {
+      updateState({ 
+          customWalls: customWalls.map(w => w.id === id ? { ...w, isPlinthExempt: !w.isPlinthExempt } : w) 
+      });
+  };
+
   const removeCustomWall = (id) => updateState({ customWalls: customWalls.filter(w => w.id !== id) });
 
   // Open Areas (SIMPLIFIED BACK TO BASICS)
@@ -168,11 +198,48 @@ export default function ProjectSetup({ globalParams, setGlobalParams, onApply })
                             <div className="flex items-center gap-2 mt-2 text-xs text-gray-500"><span>Width:</span><input type="number" className={`w-16 p-1 border rounded text-center ${getZeroStyle(intWidth)}`} value={intWidth} onChange={(e) => updateState({intWidth: e.target.value})} /></div>
                         </div>
                     </div>
-                    {customWalls.map((wall) => (<div key={wall.id} className="flex gap-2 mb-2 items-center bg-white p-2 rounded border border-gray-200"><input className="flex-1 p-1 text-xs border rounded" value={wall.name} onChange={(e) => updateCustomWall(wall.id, 'name', e.target.value)} /><div className="flex items-center gap-1"><span className="text-[10px] text-gray-400">L:</span><input type="number" className={`w-14 p-1 text-xs border rounded text-center ${getZeroStyle(wall.length)}`} value={wall.length} onChange={(e) => updateCustomWall(wall.id, 'length', e.target.value)} /></div><div className="flex items-center gap-1"><span className="text-[10px] text-gray-400">W:</span><input type="number" className={`w-12 p-1 text-xs border rounded text-center ${getZeroStyle(wall.width)}`} value={wall.width} onChange={(e) => updateCustomWall(wall.id, 'width', e.target.value)} /></div><button onClick={() => removeCustomWall(wall.id)} className="text-red-400"><Trash2 size={14} /></button></div>))}
+                    
+                    {/* CUSTOM WALLS MAPPING (UPDATED) */}
+                    {customWalls.map((wall) => (
+                        <div key={wall.id} className="flex gap-2 mb-2 items-center bg-white p-2 rounded border border-gray-200 flex-wrap">
+                            <input className="flex-1 p-1 text-xs border rounded min-w-[80px]" value={wall.name} onChange={(e) => updateCustomWall(wall.id, 'name', e.target.value)} placeholder="Wall Name" />
+                            
+                            <div className="flex items-center gap-1">
+                                <span className="text-[10px] text-gray-400">L:</span>
+                                <input type="number" className={`w-14 p-1 text-xs border rounded text-center ${getZeroStyle(wall.length)}`} value={wall.length} onChange={(e) => updateCustomWall(wall.id, 'length', e.target.value)} />
+                            </div>
+                            
+                            <div className="flex items-center gap-1">
+                                <span className="text-[10px] text-gray-400">W:</span>
+                                <input type="number" className={`w-12 p-1 text-xs border rounded text-center ${getZeroStyle(wall.width)}`} value={wall.width} onChange={(e) => updateCustomWall(wall.id, 'width', e.target.value)} />
+                            </div>
+
+                            {/* PLINTH EXEMPT TOGGLE */}
+                            <div className="flex items-center gap-1 ml-1">
+                                <button 
+                                    onClick={() => togglePlinthExempt(wall.id)}
+                                    className={`flex items-center gap-1 text-[10px] font-bold px-2 py-1 rounded border transition-colors ${wall.isPlinthExempt ? 'bg-red-50 text-red-600 border-red-200' : 'bg-gray-50 text-gray-400 border-gray-200'}`}
+                                    title="Click to Exclude from Plinth Length"
+                                >
+                                    {wall.isPlinthExempt ? <CheckSquare size={12}/> : <Square size={12}/>} 
+                                    {wall.isPlinthExempt ? 'Exempt' : 'Plinth'}
+                                </button>
+                            </div>
+
+                            <button onClick={() => removeCustomWall(wall.id)} className="text-red-400"><Trash2 size={14} /></button>
+                        </div>
+                    ))}
+                    
                     <button onClick={addCustomWall} className="text-xs text-blue-600 font-bold flex items-center gap-1 mt-2">+ Add Wall Type</button>
                 </div>
 
-                {/* OPEN AREAS SECTION (SIMPLIFIED UI) */}
+                {/* Total Wall Length Display */}
+                <div className="bg-slate-700 text-white p-3 rounded-xl flex justify-between items-center shadow-md border-t-2 border-slate-500">
+                    <span className="text-xs font-bold flex items-center gap-2 text-slate-300"><BrickWall size={14}/> Total Enclosed Wall Length (All Walls)</span>
+                    <span className="text-lg font-mono font-bold text-white">{totalEnclosedWallLength} m</span>
+                </div>
+
+                {/* OPEN AREAS SECTION (Unchanged) */}
                 <div className="bg-orange-50 p-6 rounded-2xl border border-orange-100 shadow-sm relative">
                     <h4 className="text-sm font-bold text-orange-800 flex items-center gap-2 mb-4"><Sun size={16} /> Open Areas / Sit-outs</h4>
                     <p className="text-[10px] text-orange-600 mb-3 -mt-3">"Touching" shares foundation. "Free" needs new foundation.</p>
@@ -216,10 +283,10 @@ export default function ProjectSetup({ globalParams, setGlobalParams, onApply })
                     <button onClick={addOpenArea} className="w-full py-2 border border-dashed border-orange-300 text-orange-600 rounded-lg text-xs font-bold hover:bg-orange-50 flex items-center justify-center gap-1"><Plus size={12} /> Add Open Area</button>
                 </div>
 
-                <div className="bg-slate-800 text-white p-3 rounded-xl flex justify-between items-center shadow-md"><span className="text-xs font-bold flex items-center gap-2 text-slate-300"><Calculator size={14}/> Found. Length (Walls + Free Open)</span><span className="text-lg font-mono font-bold text-yellow-400">{totalFoundationLength} m</span></div>
+                <div className="bg-slate-800 text-white p-3 rounded-xl flex justify-between items-center shadow-md"><span className="text-xs font-bold flex items-center gap-2 text-slate-300"><Calculator size={14}/> Found. Length (Walls + Free Open - Exempt)</span><span className="text-lg font-mono font-bold text-yellow-400">{totalFoundationLength} m</span></div>
             </div>
 
-            {/* RIGHT COLUMN: Floors & Columns */}
+            {/* RIGHT COLUMN: Floors & Columns (Unchanged) */}
             <div className="space-y-6">
                 <div className="bg-indigo-50/50 p-6 rounded-2xl border border-indigo-100 shadow-sm">
                     <h4 className="text-sm font-bold text-indigo-900 flex items-center gap-2 mb-4"><Building2 size={16} /> Foundation & Floors</h4>
