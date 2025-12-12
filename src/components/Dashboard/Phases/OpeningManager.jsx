@@ -1,21 +1,21 @@
 import React from 'react';
-import { Plus, Trash2, DoorOpen, BrickWall } from 'lucide-react';
+import { Plus, Trash2, DoorOpen } from 'lucide-react';
 
 // Function to get default dimensions based on opening type
 const getDefaultDimensions = (type) => {
     switch (type) {
         case 'Door':
-            return { length: 1.0, width: 2.1 }; // 1.0m width, 2.1m height
+            return { length: 1.0, width: 2.1 }; 
         case 'Window':
-        case 'Grill Window': // Use the same dimensions as standard window
-            return { length: 1.5, width: 1.5 }; // 1.5m width, 1.5m height
+        case 'Grill Window': 
+            return { length: 1.5, width: 1.5 }; 
         case 'Ventilator':
-            return { length: 0.6, width: 0.45 }; // 0.6m width, 0.45m height
+            return { length: 0.6, width: 0.45 }; 
         case 'Arch Opening':
         case 'Rectangular Opening':
-            return { length: 1.5, width: 2.1 }; // 1.5m width, 2.1m height
+            return { length: 1.5, width: 2.1 }; 
         default:
-            return { length: 1.0, width: 2.1 }; // Default to door size
+            return { length: 1.0, width: 2.1 }; 
     }
 };
 
@@ -23,15 +23,15 @@ export default function OpeningManager({
     floorName, 
     openings, 
     setOpenings,
-    extWallWidth,
-    intWallWidth
+    wallOptions = [] // Receives available wall widths [0.23, 0.15, 0.10]
 }) {
     
-    // --- Data Management Functions (Simplified for this update) ---
+    // --- Data Management Functions ---
 
     const addOpeningGroup = () => {
         const defaultDimensions = getDefaultDimensions('Door');
-        const defaultWallType = (parseFloat(extWallWidth) || 0.23).toFixed(2).toString();
+        // Default to the first available wall option, or 0.23 if none
+        const defaultWallType = wallOptions.length > 0 ? wallOptions[0] : 0.23;
         
         const newGroup = {
             id: Date.now(),
@@ -47,7 +47,7 @@ export default function OpeningManager({
     const updateOpeningGroup = (id, field, value) => {
         const newOpenings = openings.map(o => {
             if (o.id === id) {
-                const parsedValue = (field === 'length' || field === 'width' || field === 'nos') ? parseFloat(value) || 0 : value;
+                const parsedValue = (field === 'length' || field === 'width' || field === 'nos' || field === 'wallType') ? parseFloat(value) || 0 : value;
                 
                 let updatedOpening = { ...o, [field]: parsedValue };
 
@@ -71,7 +71,10 @@ export default function OpeningManager({
     // --- CALCULATIONS ---
     const totalOpeningArea = openings.reduce((sum, o) => sum + (parseFloat(o.length || 0) * parseFloat(o.width || 0) * (parseFloat(o.nos) || 0)), 0).toFixed(2);
     
-    // NEW: Calculate Total Grill Area separately for B.O.Q.
+    // NEW: Calculate Total Opening Volume (Area * Wall Thickness)
+    const totalOpeningVolume = openings.reduce((sum, o) => sum + (parseFloat(o.length || 0) * parseFloat(o.width || 0) * (parseFloat(o.nos) || 0) * (parseFloat(o.wallType) || 0)), 0).toFixed(2);
+
+    // Calculate Total Grill Area
     const totalGrillArea = openings.reduce((sum, o) => {
         if (o.type === 'Grill Window') {
             return sum + (parseFloat(o.length || 0) * parseFloat(o.width || 0) * (parseFloat(o.nos) || 0));
@@ -79,21 +82,7 @@ export default function OpeningManager({
         return sum;
     }, 0).toFixed(2);
     
-    // --- Wall Thickness Logic ---
-    const extW = (parseFloat(extWallWidth) || 0.23).toFixed(2);
-    const intW = (parseFloat(intWallWidth) || 0.15).toFixed(2);
-
-    const isSingleThickness = extW === intW;
-    
-    const wallOptions = [];
-    if (parseFloat(extW) > 0) {
-         wallOptions.push({ value: extW, label: `${extW} m (Exterior Wall)` });
-    }
-    if (parseFloat(intW) > 0 && !isSingleThickness) {
-         wallOptions.push({ value: intW, label: `${intW} m (Interior Wall)` });
-    }
-
-    // --- Calculate Total Counts per Type (Updated to track Grill Window separately) ---
+    // --- Calculate Total Counts per Type ---
     const totalCounts = openings.reduce((counts, o) => {
         const type = o.type.replace(/\s/g, ''); 
         counts[type] = (counts[type] || 0) + (parseFloat(o.nos) || 0);
@@ -106,7 +95,7 @@ export default function OpeningManager({
         { type: 'Ventilator', label: 'Ventilators' },
         { type: 'ArchOpening', label: 'Arch Openings' },
         { type: 'RectangularOpening', label: 'Rectangular Openings' },
-         { type: 'GrillWindow', label: 'Grill Windows' }, // SEPARATE LABEL
+         { type: 'GrillWindow', label: 'Grill Windows' }, 
     ];
 
 
@@ -117,7 +106,7 @@ export default function OpeningManager({
         { title: "Width (m)", key: "length", width: "10%" },
         { title: "Height (m)", key: "width", width: "10%" },
         { title: "Nos. (Total)", key: "nos", width: "8%" },
-        { title: "Wall Size", key: "wallType", width: "20%" },
+        { title: "Wall Size", key: "wallType", width: "20%" }, // UPDATED LABEL
         { title: "Area (m²)", key: "area_calc", width: "14%" },
         { title: "", key: "delete", width: "10%" },
     ];
@@ -129,13 +118,13 @@ export default function OpeningManager({
             </h4>
 
             {/* TOTAL COUNTS SUMMARY */}
-            <div className="flex justify-between items-center bg-gray-100 p-3 rounded-lg text-xs font-medium mb-4 border border-gray-200">
+            <div className="flex justify-between items-center bg-gray-100 p-3 rounded-lg text-xs font-medium mb-4 border border-gray-200 overflow-x-auto">
                 {totalCountLabels.map(({ type, label }) => {
                     const count = totalCounts[type.replace(/\s/g, '')] || 0;
                     return (
-                        <div key={type} className="text-center px-2">
-                            <span className="text-gray-500">{label}:</span>
-                            <span className={`font-bold ml-1 ${count > 0 ? 'text-blue-600' : 'text-gray-400'}`}>{count}</span>
+                        <div key={type} className="text-center px-2 min-w-[60px]">
+                            <span className="text-gray-500 block mb-1">{label}</span>
+                            <span className={`font-bold ${count > 0 ? 'text-blue-600' : 'text-gray-400'}`}>{count}</span>
                         </div>
                     );
                 })}
@@ -158,7 +147,7 @@ export default function OpeningManager({
                             return (
                                 <tr key={o.id} className="group hover:bg-gray-50 transition-colors border-b border-gray-50">
                                     
-                                    {/* Type Selector (Includes Grill Window) */}
+                                    {/* Type Selector */}
                                     <td className="py-2">
                                         <select 
                                             value={o.type} 
@@ -170,7 +159,7 @@ export default function OpeningManager({
                                             <option value="Ventilator">Ventilator</option>
                                             <option value="Arch Opening">Arch Opening</option>
                                             <option value="Rectangular Opening">Rectangular Opening</option>
-                                             <option value="Grill Window">Grill Works</option>
+                                            <option value="Grill Window">Grill Works</option>
                                         </select>
                                     </td>
                                     
@@ -184,22 +173,24 @@ export default function OpeningManager({
                                         <input type="number" value={o.width || ''} onChange={(e) => updateOpeningGroup(o.id, 'width', e.target.value)} className="w-full p-1 text-sm border rounded text-center" placeholder="0.00" />
                                     </td>
 
-                                    {/* Number of Openings (Nos.) Input */}
+                                    {/* Nos. Input */}
                                     <td>
                                         <input type="number" value={o.nos || ''} onChange={(e) => updateOpeningGroup(o.id, 'nos', e.target.value)} className="w-full p-1 text-sm border rounded text-center font-bold bg-yellow-50" placeholder="1" />
                                     </td>
 
-                                    {/* Wall Type/Thickness Dropdown (Dynamic) */}
+                                    {/* Wall Size Dropdown (FIXED) */}
                                     <td>
                                         <select 
                                             value={o.wallType} 
                                             onChange={(e) => updateOpeningGroup(o.id, 'wallType', e.target.value)}
-                                            className={`p-1 text-sm border rounded bg-white w-full ${wallOptions.length <= 1 ? 'bg-gray-200 cursor-not-allowed' : ''}`}
-                                            disabled={wallOptions.length <= 1}
+                                            className="p-1 text-sm border rounded bg-white w-full text-center"
                                         >
-                                            {wallOptions.map(option => (
-                                                <option key={option.value} value={option.value}>
-                                                    {option.label}
+                                            {/* Always provide a default if options are empty */}
+                                            {wallOptions.length === 0 && <option value="0.23">0.23 m</option>}
+                                            
+                                            {wallOptions.map((size, idx) => (
+                                                <option key={idx} value={size}>
+                                                    {size} m
                                                 </option>
                                             ))}
                                         </select>
@@ -223,11 +214,18 @@ export default function OpeningManager({
                 </table>
             </div>
 
-            {/* Total Opening Area Display */}
-            <div className="flex justify-between mt-4">
-                <p className="text-sm font-medium text-gray-600">Total Opening Area for Deduction: <span className="font-bold text-red-600">{totalOpeningArea} m²</span></p>
+            {/* SUMMARY SECTION */}
+            <div className="flex flex-wrap justify-between mt-4 gap-4 items-center border-t border-gray-100 pt-3">
+                <div className="flex gap-4">
+                    <p className="text-sm font-medium text-gray-600">
+                        Total Opening Area: <span className="font-bold text-red-600">{totalOpeningArea} m²</span>
+                    </p>
+                    <p className="text-sm font-medium text-gray-600 border-l pl-4 border-gray-300">
+                        Total Opening Volume: <span className="font-bold text-blue-600">{totalOpeningVolume} m³</span>
+                    </p>
+                </div>
                 
-                {/* NEW: Total Grill Area Display */}
+                {/* Total Grill Area Display (Only if relevant) */}
                 {parseFloat(totalGrillArea) > 0 && (
                     <p className="text-sm font-medium text-gray-600 border border-green-200 bg-green-50 px-3 py-1 rounded">
                         Total Grill Area: <span className="font-bold text-green-700">{totalGrillArea} m²</span>
@@ -237,7 +235,7 @@ export default function OpeningManager({
 
             <button 
                 onClick={addOpeningGroup} 
-                className="mt-4 text-xs text-blue-600 font-bold flex items-center gap-1 hover:bg-blue-50 px-3 py-2 rounded transition-colors border border-dashed border-blue-200"
+                className="mt-4 text-xs text-blue-600 font-bold flex items-center gap-1 hover:bg-blue-50 px-3 py-2 rounded transition-colors border border-dashed border-blue-200 w-full justify-center"
             >
                 <Plus size={14} /> Add New Group
             </button>

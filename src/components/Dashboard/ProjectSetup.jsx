@@ -1,5 +1,5 @@
 import React from 'react';
-import { Wand2, Layers, Plus, Trash2, Building2, BrickWall, LayoutDashboard, AlertCircle, Calculator, Sun, Info, CheckSquare, Square, Home } from 'lucide-react';
+import { Wand2, Layers, Plus, Trash2, Building2, BrickWall, LayoutDashboard, AlertCircle, Calculator, Sun, Info, CheckSquare, Square, Home, Layout } from 'lucide-react';
 
 export default function ProjectSetup({ globalParams, setGlobalParams, onApply }) {
   
@@ -40,7 +40,6 @@ export default function ProjectSetup({ globalParams, setGlobalParams, onApply })
   const valInt = evaluateMath(intLen) || 0;
 
   // LOGIC 1: Sum of Custom Walls that CONTRIBUTE to Plinth (Not Exempt)
-  // This is used for the Foundation Length Calculation
   const plinthRelevantCustomWallSum = customWalls.reduce((sum, w) => {
       if (w.isPlinthExempt) return sum; // Skip if exempt
       return sum + (parseFloat(w?.length) || 0);
@@ -61,7 +60,7 @@ export default function ProjectSetup({ globalParams, setGlobalParams, onApply })
 
   const updateState = (updates) => setGlobalParams({ ...params, ...updates });
 
-  // --- 3. AUTO-SIZING LOGIC (Same as before) ---
+  // --- 3. AUTO-SIZING LOGIC ---
   const getSuggestedSizes = (floorsInput) => {
     const floors = parseInt(floorsInput) || 1;
     if (floors <= 1) return { f: {l: 1.0, b: 1.0, d: 1.2}, c: {l: 0.23, b: 0.23} }; 
@@ -107,14 +106,14 @@ export default function ProjectSetup({ globalParams, setGlobalParams, onApply })
       updateState({ floorNames: newNames });
   };
   
-  // Walls (UPDATED WITH PLINTH EXEMPT FLAG)
+  // Walls
   const addCustomWall = () => updateState({ 
       customWalls: [...customWalls, { 
           id: Date.now(), 
           name: 'Partition Wall', 
           length: 0, 
           width: 0.15,
-          isPlinthExempt: false // Default: Included in Plinth
+          isPlinthExempt: false 
       }] 
   });
   
@@ -122,7 +121,6 @@ export default function ProjectSetup({ globalParams, setGlobalParams, onApply })
       updateState({ customWalls: customWalls.map(w => w.id === id ? { ...w, [field]: value } : w) });
   };
 
-  // NEW HANDLER: Toggle Plinth Exempt
   const togglePlinthExempt = (id) => {
       updateState({ 
           customWalls: customWalls.map(w => w.id === id ? { ...w, isPlinthExempt: !w.isPlinthExempt } : w) 
@@ -131,27 +129,35 @@ export default function ProjectSetup({ globalParams, setGlobalParams, onApply })
 
   const removeCustomWall = (id) => updateState({ customWalls: customWalls.filter(w => w.id !== id) });
 
-  // Open Areas (SIMPLIFIED BACK TO BASICS)
+  // --- OPEN AREAS (UPDATED: Added 'area' field) ---
   const addOpenArea = () => updateState({ 
-      openAreas: [...openAreas, { id: Date.now(), type: 'Sit-out', touchingLen: '', freeLen: '', hasRoof: true, includeInPlinth: true }] 
+      openAreas: [...openAreas, { 
+          id: Date.now(), 
+          type: 'Sit-out', 
+          touchingLen: '', 
+          freeLen: '', 
+          area: '', // New field initialized
+          hasRoof: true, 
+          includeInPlinth: true 
+      }] 
   });
+
   const updateOpenArea = (id, field, value) => {
       let updates = {};
-      const cleanValue = (field === 'touchingLen' || field === 'freeLen') ? handleMathInput(value) : value;
-
+      // Handle math input for touchingLen, freeLen, AND area
+      const cleanValue = (field === 'touchingLen' || field === 'freeLen' || field === 'area') ? handleMathInput(value) : value;
       updates[field] = cleanValue;
 
       if (field === 'type') {
-          // Logic: Courtyard = No Roof. Car Porch/Open Area = Non-Structural.
           const isCourtyard = (value === 'Courtyard');
           const isStructural = (value !== 'Car Porch' && value !== 'Open Area'); 
-          
           updates.hasRoof = !isCourtyard;
           updates.includeInPlinth = isStructural;
       }
       
       updateState({ openAreas: openAreas.map(a => a.id === id ? { ...a, ...updates } : a) });
   };
+
   const togglePlinthInclude = (id) => { updateState({ openAreas: openAreas.map(a => a.id === id ? { ...a, includeInPlinth: !a.includeInPlinth } : a) }); };
   const toggleRoofInclude = (id) => { updateState({ openAreas: openAreas.map(a => a.id === id ? { ...a, hasRoof: !a.hasRoof } : a) }); };
   const removeOpenArea = (id) => updateState({ openAreas: openAreas.filter(a => a.id !== id) });
@@ -184,14 +190,12 @@ export default function ProjectSetup({ globalParams, setGlobalParams, onApply })
                     <h4 className="text-sm font-bold text-slate-700 flex items-center gap-2 mb-4"><LayoutDashboard size={16} /> Enclosed Walls</h4>
                     <div className="grid grid-cols-2 gap-4 mb-4">
                         <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-sm">
-                            {/* EXT WALL - MATH ENABLED */}
                             <label className="block text-[10px] font-bold text-blue-500 uppercase tracking-wider mb-1">Ext. Length (m)</label>
                             <input type="text" placeholder="e.g. 5+4+5" className={`w-full p-2 border-b border-slate-200 outline-none text-lg font-bold text-slate-800 ${getZeroStyle(extLen)}`} value={extLen} onChange={(e) => updateState({extLen: handleMathInput(e.target.value)})} />
                             {evaluateMath(extLen) !== parseFloat(extLen) && <div className="text-[9px] text-gray-400 text-right">= {evaluateMath(extLen)}</div>}
                             <div className="flex items-center gap-2 mt-2 text-xs text-gray-500"><span>Width:</span><input type="number" className={`w-16 p-1 border rounded text-center ${getZeroStyle(extWidth)}`} value={extWidth} onChange={(e) => updateState({extWidth: e.target.value})} /></div>
                         </div>
                         <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-sm">
-                            {/* INT WALL - MATH ENABLED */}
                             <label className="block text-[10px] font-bold text-green-500 uppercase tracking-wider mb-1">Int. Length (m)</label>
                             <input type="text" placeholder="e.g. 4+6+2" className={`w-full p-2 border-b border-slate-200 outline-none text-lg font-bold text-slate-800 ${getZeroStyle(intLen)}`} value={intLen} onChange={(e) => updateState({intLen: handleMathInput(e.target.value)})} />
                             {evaluateMath(intLen) !== parseFloat(intLen) && <div className="text-[9px] text-gray-400 text-right">= {evaluateMath(intLen)}</div>}
@@ -199,10 +203,9 @@ export default function ProjectSetup({ globalParams, setGlobalParams, onApply })
                         </div>
                     </div>
                     
-                    {/* CUSTOM WALLS MAPPING (UPDATED) */}
                     {customWalls.map((wall) => (
                         <div key={wall.id} className="flex gap-2 mb-2 items-center bg-white p-2 rounded border border-gray-200 flex-wrap">
-                            <input className="flex-1 p-1 text-xs border rounded min-w-[80px]" value={wall.name} onChange={(e) => updateCustomWall(wall.id, 'name', e.target.value)} placeholder="Wall Name" />
+                            <input className="flex-1 p-1 text-xs border rounded min-w-[80px]" value={wall.name} onChange={(e) => updateCustomWall(wall.id, 'name', e.target.value)} placeholder="Wall Name"/>
                             
                             <div className="flex items-center gap-1">
                                 <span className="text-[10px] text-gray-400">L:</span>
@@ -214,7 +217,6 @@ export default function ProjectSetup({ globalParams, setGlobalParams, onApply })
                                 <input type="number" className={`w-12 p-1 text-xs border rounded text-center ${getZeroStyle(wall.width)}`} value={wall.width} onChange={(e) => updateCustomWall(wall.id, 'width', e.target.value)} />
                             </div>
 
-                            {/* PLINTH EXEMPT TOGGLE */}
                             <div className="flex items-center gap-1 ml-1">
                                 <button 
                                     onClick={() => togglePlinthExempt(wall.id)}
@@ -239,10 +241,10 @@ export default function ProjectSetup({ globalParams, setGlobalParams, onApply })
                     <span className="text-lg font-mono font-bold text-white">{totalEnclosedWallLength} m</span>
                 </div>
 
-                {/* OPEN AREAS SECTION (Unchanged) */}
+                {/* OPEN AREAS SECTION (UPDATED: Added AREA Input) */}
                 <div className="bg-orange-50 p-6 rounded-2xl border border-orange-100 shadow-sm relative">
                     <h4 className="text-sm font-bold text-orange-800 flex items-center gap-2 mb-4"><Sun size={16} /> Open Areas / Sit-outs</h4>
-                    <p className="text-[10px] text-orange-600 mb-3 -mt-3">"Touching" shares foundation. "Free" needs new foundation.</p>
+                    <p className="text-[10px] text-orange-600 mb-3 -mt-3">"Touching" shares foundation. "Free" needs new foundation. Area is for flooring.</p>
                     
                     <div className="space-y-3 mb-4">
                         {openAreas.map((area) => (
@@ -260,22 +262,25 @@ export default function ProjectSetup({ globalParams, setGlobalParams, onApply })
                                     </div>
                                 </div>
 
-                                {/* Inputs (Simplified) */}
-                                <div className="flex gap-4 border-t border-gray-100 pt-2 mt-2">
+                                {/* Inputs (UPDATED LAYOUT: 3 COLUMNS for Lengths + Area) */}
+                                <div className="flex gap-3 border-t border-gray-100 pt-2 mt-2">
                                     <div className="flex-1">
                                         <label className="block text-[9px] font-bold text-gray-400 uppercase mb-1">Touching Wall</label>
-                                        <input type="text" placeholder="e.g. 3+2+4" className={`w-full p-1.5 bg-gray-50 border rounded text-center text-xs font-bold ${getZeroStyle(evaluateMath(area.touchingLen))}`} value={area.touchingLen} onChange={(e) => updateOpenArea(area.id, 'touchingLen', e.target.value)} />
-                                        {evaluateMath(area.touchingLen) !== parseFloat(area.touchingLen) && <div className="text-[9px] text-gray-400 text-right">= {evaluateMath(area.touchingLen)}</div>}
+                                        <input type="text" placeholder="e.g. 3+4" className={`w-full p-1.5 bg-gray-50 border rounded text-center text-xs font-bold ${getZeroStyle(evaluateMath(area.touchingLen))}`} value={area.touchingLen} onChange={(e) => updateOpenArea(area.id, 'touchingLen', e.target.value)} />
                                     </div>
                                     <div className="flex-1">
                                         <label className="block text-[9px] font-bold text-orange-600 uppercase mb-1">Free / Open</label>
-                                        <input type="text" placeholder="e.g. 2+3+2" className={`w-full p-1.5 bg-white border rounded text-center text-xs font-bold text-orange-800 ${getZeroStyle(evaluateMath(area.freeLen))}`} value={area.freeLen} onChange={(e) => updateOpenArea(area.id, 'freeLen', e.target.value)} />
-                                        {evaluateMath(area.freeLen) !== parseFloat(area.freeLen) && <div className="text-[9px] text-orange-400 text-right font-bold">= {evaluateMath(area.freeLen)}</div>}
+                                        <input type="text" placeholder="e.g. 2+3" className={`w-full p-1.5 bg-white border rounded text-center text-xs font-bold text-orange-800 ${getZeroStyle(evaluateMath(area.freeLen))}`} value={area.freeLen} onChange={(e) => updateOpenArea(area.id, 'freeLen', e.target.value)} />
+                                    </div>
+                                    {/* NEW AREA INPUT */}
+                                    <div className="flex-1">
+                                        <label className="block text-[9px] font-bold text-blue-600 uppercase mb-1 flex items-center gap-1"><Layout size={10}/> Floor Area</label>
+                                        <input type="text" placeholder="e.g. 12" className={`w-full p-1.5 bg-blue-50 border border-blue-100 rounded text-center text-xs font-bold text-blue-800 ${getZeroStyle(evaluateMath(area.area))}`} value={area.area} onChange={(e) => updateOpenArea(area.id, 'area', e.target.value)} />
                                     </div>
                                 </div>
 
-                                <div className="flex justify-end mt-1 pt-1 border-t border-gray-50">
-                                    <div className="text-[10px] font-bold text-gray-400">Total Perimeter: <span className="text-gray-700">{(evaluateMath(area.touchingLen) + evaluateMath(area.freeLen)).toFixed(2)} m</span></div>
+                                <div className="flex justify-end mt-1 pt-1 border-t border-gray-50 gap-3">
+                                    <div className="text-[10px] font-bold text-gray-400">Perimeter: <span className="text-gray-700">{(evaluateMath(area.touchingLen) + evaluateMath(area.freeLen)).toFixed(2)} m</span></div>
                                 </div>
                             </div>
                         ))}

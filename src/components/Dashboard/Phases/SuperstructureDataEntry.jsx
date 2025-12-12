@@ -1,9 +1,7 @@
-import React, { useState, useEffect } from "react";
-import { Save, AlertCircle, Home, Hammer } from "lucide-react";
-import PlinthDataInput from "../Phases/PlinthDataInput";
-import OpeningManager from "./OpeningManager"; // NOTE: OpeningManager is assumed to be imported but PlinthDataInput uses it internally
+import React, { useState, useEffect } from 'react';
+import { Hammer } from 'lucide-react';
+import PlinthDataInput from '../Phases/PlinthDataInput'; 
 
-// Structure to hold data for ALL floors
 export default function SuperstructureDataEntry({
   floorNames,
   globalParams,
@@ -11,39 +9,43 @@ export default function SuperstructureDataEntry({
   setManualSuperstructureData,
 }) {
   const [activeFloorName, setActiveFloorName] = useState(floorNames[0]);
-  const [floorStatus, setFloorStatus] = useState({}); // To track if a floor is "Saved"
+  const [floorStatus, setFloorStatus] = useState({});
 
   useEffect(() => {
-    // Initialize floor status based on floorNames
     const initialStatus = floorNames.reduce((acc, name) => {
-      acc[name] = !!manualSuperstructureData[name]; // Check if data already exists
+      acc[name] = !!manualSuperstructureData[name];
       return acc;
     }, {});
     setFloorStatus(initialStatus);
     setActiveFloorName(floorNames[0]);
-  }, [floorNames, manualSuperstructureData]); // Added manualSuperstructureData to dependency array for reliable status update
+  }, [floorNames, manualSuperstructureData]);
 
-  const currentFloorData = manualSuperstructureData[activeFloorName] || {}; // FETCH SUBSTRUCTURE WALL LENGTHS AND WIDTHS FOR REFERENCE
-  const extWallRef = globalParams.extLen || "0";
-  const intWallRef = globalParams.intLen || "0";
+  const currentFloorData = manualSuperstructureData[activeFloorName] || {};
 
-  // NEW: Pass the actual wall thicknesses down
-  const extWallWidth = globalParams.extWidth || 0.23;
-const intWallWidth = globalParams.intWidth || 0.15; 
+  // --- FETCH DATA FROM SUB STRUCTURE ---
+  // Simple eval for "5+5" strings to get total numbers
+  const evaluateMath = (val) => {
+      try { return parseFloat(new Function('return ' + val)()) || 0; } catch (e) { return 0; }
+  };
+
+  const extLen = evaluateMath(globalParams.extLen);
+  const intLen = evaluateMath(globalParams.intLen);
+  
+  const extWidth = parseFloat(globalParams.extWidth) || 0.23;
+  const intWidth = parseFloat(globalParams.intWidth) || 0.23;
+
+  // Pass the raw custom walls array directly
+  const customWalls = globalParams.customWalls || [];
+
   const handleSaveFloorData = (dataToSave) => {
-    // 1. Save the new data into the global state map
     const newSuperstructureData = {
       ...manualSuperstructureData,
       [activeFloorName]: dataToSave,
     };
-    setManualSuperstructureData(newSuperstructureData); // 2. Mark this floor as saved
-
-    setFloorStatus((prev) => ({
-      ...prev,
-      [activeFloorName]: true,
-    }));
-
-    alert(`${activeFloorName} data saved successfully!`); // 3. Move to the next floor if available
+    setManualSuperstructureData(newSuperstructureData);
+    setFloorStatus((prev) => ({ ...prev, [activeFloorName]: true }));
+    alert(`${activeFloorName} data saved successfully!`);
+    
     const currentIndex = floorNames.indexOf(activeFloorName);
     if (currentIndex < floorNames.length - 1) {
       setActiveFloorName(floorNames[currentIndex + 1]);
@@ -52,13 +54,11 @@ const intWallWidth = globalParams.intWidth || 0.15;
 
   return (
     <div className="bg-white p-6 rounded-2xl shadow-xl mb-8 border border-gray-200">
-      {" "}
       <h3 className="text-xl font-bold text-orange-600 mb-4 flex items-center gap-2">
         <Hammer size={20} /> Super Structure Data Entry
       </h3>
-      {/* FLOOR NAVIGATION TABS */}{" "}
-      <div className="flex gap-2 mb-4 overflow-x-auto pb-2 border-b border-gray-100">
-        {" "}
+      
+      <div className="flex gap-2 mb-6 overflow-x-auto pb-2 border-b border-gray-100">
         {floorNames.map((name) => (
           <button
             key={name}
@@ -71,22 +71,30 @@ const intWallWidth = globalParams.intWidth || 0.15;
                 : "bg-gray-100 text-gray-700 hover:bg-gray-200"
             }`}
           >
-            {name} {floorStatus[name] && "✓"}{" "}
+            {name} {floorStatus[name] && "✓"}
           </button>
-        ))}{" "}
-      </div>{" "}
+        ))}
+      </div>
+
       <div className="animate-fade-in">
-    <PlinthDataInput 
-        floorName={activeFloorName}
-        initialData={currentFloorData}
-        extWallRef={extWallRef}
-        intWallRef={intWallRef}
-        // CRITICAL: Passing the widths
-        extWallWidth={extWallWidth}
-        intWallWidth={intWallWidth}
-        onSave={handleSaveFloorData}
-    />
-</div>
+        <PlinthDataInput 
+            floorName={activeFloorName}
+            initialData={currentFloorData}
+            
+            // Pass Base Wall Data
+            initialExt={{ l: extLen, b: extWidth }}
+            initialInt={{ l: intLen, b: intWidth }}
+            
+            // Pass Full List of Custom Walls
+            projectCustomWalls={customWalls}
+            
+            // Fallbacks for Opening Manager
+            extWallWidth={extWidth}
+            intWallWidth={intWidth}
+            
+            onSave={handleSaveFloorData}
+        />
+      </div>
     </div>
   );
 }
