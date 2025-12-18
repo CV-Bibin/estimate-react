@@ -10,39 +10,46 @@ import Finishing from './Phases/Finishing';
 // IMPORT NEW FUNCTION
 import { getSiteClearanceRows, getExcavationRows, getFoundationRows, getEarthFillingRows } from '../../utils/estimationRules';
 
-// REMOVED: import SuperStructureAI from './Phases/SuperStructureAI'; 
-
 // IMPORT THE NEW DATA ENTRY ORCHESTRATOR
-import SuperstructureDataEntry from './Phases/SuperstructureDataEntry'; // NOTE: Assuming SuperstructureDataEntry wraps the new UI logic
+import SuperstructureDataEntry from './Phases/SuperstructureDataEntry'; 
 
-export default function ManualEstimator({ workItems = [], projectData = {} }) {
-  
+export default function ManualEstimator({ 
+    workItems = [], 
+    projectData = {}, 
+    projectConcealedColumns = [], // Columns passed from App.js
+    initialGlobalParams = {}      // Added to support full parameter passing
+}) {
+  
   const [activeTab, setActiveTab] = useState('Sub Structure');
-  const [showAutoFill, setShowAutoFill] = useState(true);
+  
+  // Logic: If we already have columns or setup data, hide the Smart Setup popup by default
+  const hasSetupData = projectConcealedColumns.length > 0 || initialGlobalParams.extLen;
+  const [showAutoFill, setShowAutoFill] = useState(!hasSetupData);
   
   // PRIMARY STRUCTURAL STATE (Sub Structure data)
   const [globalParams, setGlobalParams] = useState({
-    extLen: '', 
-    extWidth: 0.23, 
-    intLen: '', // Interior Length (for user input)
-    intWidth: 0.23, // Interior Width (structural constant)
-    customWalls: [], 
-    openAreas: [], 
-    columnGroups: [],
+    extLen: initialGlobalParams.extLen || '', 
+    extWidth: initialGlobalParams.extWidth || 0.23, 
+    intLen: initialGlobalParams.intLen || '', 
+    intWidth: initialGlobalParams.intWidth || 0.23, 
+    customWalls: initialGlobalParams.customWalls || [], 
+    openAreas: initialGlobalParams.openAreas || [], 
+    // IMPORTANT: Initialize with props so data from Step 4 is not lost
+    columnGroups: initialGlobalParams.columnGroups || projectConcealedColumns || [],
     foundationType: 'RR', 
-    numFloors: 1, 
-    floorNames: ['Ground Floor']
+    numFloors: initialGlobalParams.numFloors || 1, 
+    floorNames: initialGlobalParams.floorNames || ['Ground Floor']
   });
 
-  // NEW STATE: STORES ALL MANUAL SUPER STRUCTURE INPUTS (Plinth Area, Openings, etc., mapped by floor)
+  // NEW STATE: STORES ALL MANUAL SUPER STRUCTURE INPUTS
   const [manualSuperstructureData, setManualSuperstructureData] = useState({}); 
 
-  // NOTE: aiSuperStructureData state is removed as requested.
   const [roomData, setRoomData] = useState({}); 
   const [measurements, setMeasurements] = useState({});
 
   useEffect(() => {
-    if (workItems && workItems.length > 0 && Object.keys(measurements).length === 0) {
+    // Safety check: workItems should be an array for this logic to work
+    if (Array.isArray(workItems) && workItems.length > 0 && Object.keys(measurements).length === 0) {
       const initialData = workItems.reduce((acc, item) => ({ 
         ...acc, [item.id]: [{ id: Date.now(), desc: '', nos: 1, l: 0, b: 0, d: 0, unit: 'm3' }] 
       }), {});
@@ -52,7 +59,6 @@ export default function ManualEstimator({ workItems = [], projectData = {} }) {
 
   const updateMeasurements = (itemId, newRows) => setMeasurements(prev => ({ ...prev, [itemId]: newRows }));
 
-  // Handler to update room data (Placeholder for room dimension entry)
   const updateRoomData = (floorName, updatedRooms) => {
       setRoomData(prev => ({
           ...prev,
@@ -89,23 +95,24 @@ export default function ManualEstimator({ workItems = [], projectData = {} }) {
 
     const newMeasurements = { ...measurements };
 
-    workItems.forEach(item => {
+    if(Array.isArray(workItems)) {
+        workItems.forEach(item => {
         const title = (item.title || "").toLowerCase();
         
         if (title.includes("site")) {
-             newMeasurements[item.id] = getSiteClearanceRows();
+                newMeasurements[item.id] = getSiteClearanceRows();
         }
         else if (title.includes("excavation") || title.includes("earthwork")) {
-             newMeasurements[item.id] = getExcavationRows(globalParams, totalWallLen);
+                newMeasurements[item.id] = getExcavationRows(globalParams, totalWallLen);
         }
         else if (title.includes("pcc") || title.includes("foundation")) {
-             newMeasurements[item.id] = getFoundationRows(globalParams, totalWallLen);
+                newMeasurements[item.id] = getFoundationRows(globalParams, totalWallLen);
         }
-        // FILLING LOGIC
         else if (title.includes("filling") || title.includes("earth")) {
-             newMeasurements[item.id] = getEarthFillingRows(globalParams, totalWallLen);
+                newMeasurements[item.id] = getEarthFillingRows(globalParams, totalWallLen);
         }
-    });
+        });
+    }
 
     setMeasurements(newMeasurements);
     setShowAutoFill(false);
@@ -113,33 +120,34 @@ export default function ManualEstimator({ workItems = [], projectData = {} }) {
 
   const generatePDF = () => {
     const doc = new jsPDF();
-    // ... (PDF generation logic remains unchanged) ...
     doc.setFontSize(18); doc.setTextColor(41, 128, 185); doc.text("ESTIMATION REPORT", 14, 20);
     doc.setFontSize(10); doc.setTextColor(0, 0, 0);
     doc.text(`Project: ${projectData.projectName || 'New Project'}`, 14, 30);
     doc.line(14, 45, 196, 45);
     
     let yPos = 50;
-    workItems.forEach((item, index) => {
-      const itemRows = measurements[item.id] || [];
-      const validRows = itemRows.filter(row => row.isHeader || calculateQty(row) !== "0.00");
-      if (validRows.length === 0) return;
+    if(Array.isArray(workItems)) {
+        workItems.forEach((item, index) => {
+        const itemRows = measurements[item.id] || [];
+        const validRows = itemRows.filter(row => row.isHeader || calculateQty(row) !== "0.00");
+        if (validRows.length === 0) return;
 
-      const tableRows = validRows.map(row => {
-          if (row.isHeader) return [{ content: row.desc, colSpan: 7, styles: { fillColor: [220, 220, 220], fontStyle: 'bold', halign: 'center' } }];
-          return [row.desc || '-', row.nos, row.l, row.b, row.d, calculateQty(row), row.unit];
-      });
+        const tableRows = validRows.map(row => {
+            if (row.isHeader) return [{ content: row.desc, colSpan: 7, styles: { fillColor: [220, 220, 220], fontStyle: 'bold', halign: 'center' } }];
+            return [row.desc || '-', row.nos, row.l, row.b, row.d, calculateQty(row), row.unit];
+        });
 
-      if (yPos > 250) { doc.addPage(); yPos = 20; }
-      doc.setFontSize(11); doc.setFont("helvetica", "bold"); doc.text(`${index + 1}. ${item.title}`, 14, yPos);
-      tableRows.push([{ content: 'Total', colSpan: 5, styles: { fontStyle: 'bold', halign: 'right' } }, calculateTotal(item.id), '']);
-      
-      autoTable(doc, { 
-        startY: yPos + 5, head: [['Desc', 'No', 'L', 'B', 'D', 'Qty', 'Unit']], body: tableRows,
-        theme: 'grid', styles: { fontSize: 9, cellPadding: 2 }, columnStyles: { 0: { cellWidth: 60 }, 5: { fontStyle: 'bold' } }
-      });
-      yPos = doc.lastAutoTable.finalY + 10;
-    });
+        if (yPos > 250) { doc.addPage(); yPos = 20; }
+        doc.setFontSize(11); doc.setFont("helvetica", "bold"); doc.text(`${index + 1}. ${item.title}`, 14, yPos);
+        tableRows.push([{ content: 'Total', colSpan: 5, styles: { fontStyle: 'bold', halign: 'right' } }, calculateTotal(item.id), '']);
+        
+        autoTable(doc, { 
+            startY: yPos + 5, head: [['Desc', 'No', 'L', 'B', 'D', 'Qty', 'Unit']], body: tableRows,
+            theme: 'grid', styles: { fontSize: 9, cellPadding: 2 }, columnStyles: { 0: { cellWidth: 60 }, 5: { fontStyle: 'bold' } }
+        });
+        yPos = doc.lastAutoTable.finalY + 10;
+        });
+    }
     doc.save('Estimation.pdf');
   };
 
@@ -151,29 +159,37 @@ export default function ManualEstimator({ workItems = [], projectData = {} }) {
     return 'Super Structure';
   };
 
-  const subStructureItems = workItems.filter(item => getCategory(item.title) === 'Sub Structure');
-  const superStructureItems = workItems.filter(item => getCategory(item.title) === 'Super Structure');
-  const finishingItems = workItems.filter(item => getCategory(item.title) === 'Finishing');
+  // Safe filtering
+  const safeWorkItems = Array.isArray(workItems) ? workItems : [];
+  const subStructureItems = safeWorkItems.filter(item => getCategory(item.title) === 'Sub Structure');
+  const superStructureItems = safeWorkItems.filter(item => getCategory(item.title) === 'Super Structure');
+  const finishingItems = safeWorkItems.filter(item => getCategory(item.title) === 'Finishing');
   
   const phaseProps = { 
     measurements, updateMeasurements, calculateTotal, calculateQty, 
     floorNames: globalParams.floorNames,
     globalParams: globalParams, 
-    // AI data reference is intentionally omitted
     roomData, 
     updateRoomData,
     manualSuperstructureData,
     setManualSuperstructureData
   };
 
-  if (!workItems || workItems.length === 0) return <div className="flex flex-col items-center justify-center h-64 text-gray-400"><AlertTriangle size={48} className="mb-4 text-yellow-500" /><h3 className="text-lg font-bold">No Work Items Found</h3></div>;
+  // --- CRITICAL FIX: DETERMINE WHICH COLUMNS TO USE ---
+  // If user used Smart Setup (Step 4), globalParams.columnGroups will have data.
+  // If user skipped Smart Setup but passed props from App.js, projectConcealedColumns will have data.
+  // We prioritize globalParams because it reflects the most recent edits.
+  const effectiveColumns = (globalParams.columnGroups && globalParams.columnGroups.length > 0)
+    ? globalParams.columnGroups
+    : projectConcealedColumns;
+
+  if (safeWorkItems.length === 0) return <div className="flex flex-col items-center justify-center h-64 text-gray-400"><AlertTriangle size={48} className="mb-4 text-yellow-500" /><h3 className="text-lg font-bold">No Work Items Found</h3></div>;
 
   return (
     <div className="max-w-7xl mx-auto pb-20">
       <div className="flex justify-between items-end mb-6 sticky top-20 bg-gray-50 pt-4 pb-4 z-40 border-b border-gray-200">
         <div><h2 className="text-2xl font-bold text-gray-800">Measurement Entry</h2><p className="text-gray-500 text-sm">Phase: <span className="text-blue-600 font-bold">{activeTab}</span></p></div>
         <div className="flex gap-2">
-            {/* Toggle Smart Setup Button visibility (Only Sub Structure) */}
             {activeTab === 'Sub Structure' && 
                 <button onClick={() => setShowAutoFill(!showAutoFill)} className="bg-blue-100 text-blue-700 px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-blue-200 border border-blue-200 text-sm font-bold"><Settings2 size={16} /> Smart Setup</button>
             }
@@ -181,13 +197,21 @@ export default function ManualEstimator({ workItems = [], projectData = {} }) {
         </div>
       </div>
 
-      {/* CONDITIONAL SETUP/DATA INPUT */}
-      {/* 1. Sub Structure Setup (ProjectSetup component) */}
+      {/* 1. Sub Structure Setup */}
       {activeTab === 'Sub Structure' && showAutoFill && <ProjectSetup globalParams={globalParams} setGlobalParams={setGlobalParams} onApply={handleAutoFill} />}
       
-      {/* 2. Super Structure Data Entry (The new manual flow) */}
-      {activeTab === 'Super Structure' && <SuperstructureDataEntry floorNames={globalParams.floorNames} globalParams={globalParams} manualSuperstructureData={manualSuperstructureData} setManualSuperstructureData={setManualSuperstructureData} />}
-
+      {/* 2. Super Structure Data Entry */}
+      {activeTab === 'Super Structure' && (
+        <SuperstructureDataEntry 
+            floorNames={globalParams.floorNames} 
+            globalParams={globalParams} 
+            manualSuperstructureData={manualSuperstructureData} 
+            setManualSuperstructureData={setManualSuperstructureData}
+            
+            // 👇 PASSING THE EFFECTIVE COLUMNS (Fixes the missing section) 👇
+            projectConcealedColumns={effectiveColumns}
+        />
+      )}
 
       <div className="flex gap-4 mb-8 border-b border-gray-200 pb-1 overflow-x-auto">
         {[{ id: 'Sub Structure', icon: Layers, color: 'text-blue-600', border: 'border-blue-600' }, { id: 'Super Structure', icon: Hammer, color: 'text-orange-600', border: 'border-orange-600' }, { id: 'Finishing', icon: PaintBucket, color: 'text-purple-600', border: 'border-purple-600' }].map((tab) => (

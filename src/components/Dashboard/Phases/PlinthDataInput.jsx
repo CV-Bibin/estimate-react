@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useMemo } from 'react';
-// FIX: Added 'Trash2' to the imports below
 import { Maximize2, Ruler, BrickWall, Calculator, ArrowDown, ArrowUp, Grid, Home, Save, Trash2 } from 'lucide-react';
 import OpeningManager from './OpeningManager';
 import BeamLintelManager from './BeamLintelManager';
@@ -11,16 +10,15 @@ export default function PlinthDataInput({
     initialInt, 
     projectCustomWalls = [], 
     projectOpenAreas = [], 
+    projectConcealedColumns = [], // Data fetched from First Section
     onSave 
 }) {
     // --- SAFEGUARDS ---
     const handleMathInput = (val) => val ? String(val).replace(/[^0-9+\-*/. ]/g, '') : ''; 
     
-    // Robust Math Evaluator that never throws
     const evaluateMath = (val) => {
         try {
             if (val === undefined || val === null || val === '') return 0;
-            // Prevent Object/Array to string conversion issues
             if (typeof val === 'object') return 0; 
             const cleanVal = String(val).replace(/[^0-9+\-*/. ]/g, ''); 
             if (!cleanVal) return 0;
@@ -66,13 +64,12 @@ export default function PlinthDataInput({
             plinthArea: initialData.plinthArea || '',
             plinthPerimeter: initialData.plinthPerimeter || '', 
             deductionVol: initialData.deductionVol || '',       
-            deductionCols: initialData.deductionCols || '',     
+            deductionCols: initialData.deductionCols || '', 
             deductionArea: initialData.deductionArea || '',
             deductionCarpet: initialData.deductionCarpet || '',
             extWall: initialData.extWall || { l: initialExt?.l || 0, b: initialExt?.b || 0.23, h: 3.0 },
             intWall: initialData.intWall || { l: initialInt?.l || 0, b: initialInt?.b || 0.23, h: 3.0 },
             
-            // Explicit Array Initialization to prevent mapping over undefined
             customWalls: Array.isArray(initialCustomWalls) ? initialCustomWalls : [],
             irregularWalls: Array.isArray(initialData.irregularWalls) ? initialData.irregularWalls : [],
             openings: Array.isArray(initialData.openings) ? initialData.openings : [],
@@ -90,47 +87,49 @@ export default function PlinthDataInput({
         plinthA: 0, footprint: 0, netCarpet: 0,
         grossLintelVol: 0,
         lintelVol: 0, 
-        beamVolConcealed: 0, beamVolDrop: 0, beamVolOpen: 0, beamVolTotal: 0, concreteVolume: 0
+        beamVolConcealed: 0, beamVolDrop: 0, beamVolOpen: 0, beamVolTotal: 0, 
+        columnVol: 0, 
+        concreteVolume: 0
     });
 
     useEffect(() => { }, [floorName]);
 
-    // --- 2. CALCULATED DERIVED VALUES (Memoized for Safety) ---
-    // This prevents crash if a wall has no width defined yet
+    // --- 2. CALCULATED DERIVED VALUES ---
     const availableWallWidths = useMemo(() => {
         const widths = new Set();
-        // Add Base Walls safely
         if (data.extWall?.b) widths.add(parseFloat(data.extWall.b) || 0.23);
         if (data.intWall?.b) widths.add(parseFloat(data.intWall.b) || 0.23);
-        
-        // Add Custom Walls safely
-        if (Array.isArray(data.customWalls)) {
-            data.customWalls.forEach(w => {
-                if (w && w.b) widths.add(parseFloat(w.b) || 0);
-            });
-        }
-        
-        // Add Irregular Walls safely
-        if (Array.isArray(data.irregularWalls)) {
-            data.irregularWalls.forEach(w => {
-                if (w && w.b) widths.add(parseFloat(w.b) || 0);
-            });
-        }
-        
+        if (Array.isArray(data.customWalls)) data.customWalls.forEach(w => { if (w && w.b) widths.add(parseFloat(w.b) || 0); });
+        if (Array.isArray(data.irregularWalls)) data.irregularWalls.forEach(w => { if (w && w.b) widths.add(parseFloat(w.b) || 0); });
         return [...widths].sort((a, b) => b - a);
     }, [data.extWall, data.intWall, data.customWalls, data.irregularWalls]);
 
+    // --- 3. AUTO-CALCULATE COLUMN VOLUME (Memoized) ---
+    // We use JSON.stringify to ensure we only recalculate when the CONTENT of the columns changes
+    const autoColumnVol = useMemo(() => {
+        let vol = 0;
+        if (projectConcealedColumns && Array.isArray(projectConcealedColumns) && projectConcealedColumns.length > 0) {
+            projectConcealedColumns.forEach(col => {
+                const len = parseFloat(col.length || col.l || col.c_l) || 0;
+                const wid = parseFloat(col.width || col.b || col.c_b) || 0;
+                const qty = parseFloat(col.count || col.nos) || 1; 
+                const wallHt = 3.0; // Standard Wall Deduction Height
+                
+                vol += (len * wid * wallHt * qty);
+            });
+        }
+        return vol;
+    }, [JSON.stringify(projectConcealedColumns)]); 
 
-    // --- 3. MAIN CALCULATIONS ---
+    // --- 4. MAIN CALCULATIONS ---
     useEffect(() => {
         const val = (v) => evaluateMath(v); 
 
         // 1. WALLS
-        let scheduleVol = 0; let scheduleArea = 0; let footprint = 0; let totalLen = 0; 
-        let totalLintelVol = 0;
+        let scheduleVol = 0; let scheduleArea = 0; let footprint = 0; let totalLen = 0; let totalLintelVol = 0;
         
         const processWall = (w, isExempt) => {
-            if (!w) return; // Skip invalid entries
+            if (!w) return;
             const l = val(w.l); const b = val(w.b); const h = val(w.h);
             const v = l * b * h; 
             const a = l * h * 2;
@@ -143,11 +142,11 @@ export default function PlinthDataInput({
         if(data.intWall) processWall(data.intWall, false);
         if(Array.isArray(data.customWalls)) data.customWalls.forEach(w => processWall(w, w.isPlinthExempt));
 
-        // 2. ADJUSTMENTS (Protected Loop)
+        // 2. ADJUSTMENTS
         let adjustVol = 0; let adjustArea = 0;
         if(Array.isArray(data.irregularWalls)) {
             data.irregularWalls.forEach(w => {
-                if (!w) return; // Skip invalid entries
+                if (!w) return;
                 const l = val(w.l); const b = val(w.b); const h = val(w.h);
                 if (w.mode === 'deduct') { 
                     adjustVol -= (l*b*h); adjustArea -= (l*h*2); 
@@ -162,20 +161,17 @@ export default function PlinthDataInput({
         // 3. LINTELS
         let manualLintelDeductVol = 0;
         if (data.lintels && Array.isArray(data.lintels.deductions)) {
-            data.lintels.deductions.forEach(d => {
-                if (d) manualLintelDeductVol += (val(d.l) * parseFloat(d.b || 0.23) * 0.15);
-            });
+            data.lintels.deductions.forEach(d => { if (d) manualLintelDeductVol += (val(d.l) * parseFloat(d.b || 0.23) * 0.15); });
         }
         const netLintelVol = Math.max(0, totalLintelVol - manualLintelDeductVol); 
         
-        // 4. BEAMS
+        // 4. BEAMS (Separate Totals)
         let volOpen = 0; let volConcealed = 0; let volDrop = 0;
         if(Array.isArray(data.openAreaBeams)) data.openAreaBeams.forEach(b => { if(b) volOpen += (val(b.l) * val(b.b) * val(b.d)); });
         if(data.mainBeams?.concealed && Array.isArray(data.mainBeams.concealed)) data.mainBeams.concealed.forEach(b => { if(b) volConcealed += (val(b.l) * val(b.b) * val(b.d)); });
         if(data.mainBeams?.drop && Array.isArray(data.mainBeams.drop)) data.mainBeams.drop.forEach(b => { if(b) volDrop += (val(b.l) * val(b.b) * val(b.d)); });
         
         const beamVolTotal = volOpen + volConcealed + volDrop;
-        const concreteVol = beamVolTotal + netLintelVol;
 
         // 5. OPENINGS
         let openVol = 0; let openArea = 0;
@@ -186,13 +182,21 @@ export default function PlinthDataInput({
         const openAreaDed = openArea * 2; 
 
         const manVolDed = val(data.deductionVol);
-        const colVolDed = val(data.deductionCols);
         const manAreaDed = val(data.deductionArea);
         const manCarpetDed = val(data.deductionCarpet);
         
         // 6. NET TOTALS
         const grossVolTotal = safeNum(scheduleVol);
-        const totalNetVol = grossVolTotal + safeNum(adjustVol) - safeNum(openVol) - safeNum(netLintelVol) - safeNum(beamVolTotal) - safeNum(colVolDed) - safeNum(manVolDed);
+        
+        const totalNetVol = 
+            grossVolTotal + 
+            safeNum(adjustVol) - 
+            safeNum(openVol) - 
+            safeNum(netLintelVol) - 
+            safeNum(volConcealed) - 
+            safeNum(autoColumnVol) - 
+            safeNum(manVolDed);
+
         const totalNetArea = (scheduleArea + adjustArea) - openAreaDed - manAreaDed;
 
         setStats({
@@ -206,71 +210,26 @@ export default function PlinthDataInput({
             grossLintelVol: totalLintelVol,
             lintelVol: netLintelVol,
             beamVolConcealed: volConcealed, beamVolDrop: volDrop, beamVolOpen: volOpen, beamVolTotal: beamVolTotal,
-            concreteVolume: concreteVol
+            columnVol: autoColumnVol, 
+            concreteVolume: beamVolTotal + netLintelVol + autoColumnVol
         });
 
-    }, [data]);
+    }, [data, autoColumnVol]); 
 
     // --- HANDLERS ---
-    const updateBaseWall = (type, field, val) => { 
-        const cleanVal = (field === 'l' || field === 'b') ? handleMathInput(val) : val; 
-        setData(prev => ({ ...prev, [type]: { ...prev[type], [field]: cleanVal } })); 
-    };
-    const updateField = (field, val) => { 
-        const cleanVal = handleMathInput(val); 
-        setData(prev => ({ ...prev, [field]: cleanVal })); 
-    };
+    const updateBaseWall = (type, field, val) => { const cleanVal = (field === 'l' || field === 'b') ? handleMathInput(val) : val; setData(prev => ({ ...prev, [type]: { ...prev[type], [field]: cleanVal } })); };
+    const updateField = (field, val) => { const cleanVal = handleMathInput(val); setData(prev => ({ ...prev, [field]: cleanVal })); };
 
-    // --- SAFE ADD/UPDATE HANDLERS ---
-    const addWall = (type) => { 
-        const isExt = type === 'exterior'; 
-        const newWall = { id: Date.now() + Math.random(), name: isExt ? 'Extra Ext. Wall' : 'Partition Wall', l: '0', b: isExt ? '0.23' : '0.10', h: '3.0', isPlinthExempt: false }; 
-        setData(prev => ({ ...prev, customWalls: [...(prev.customWalls || []), newWall] })); 
-    };
-    
-    const updateCustomWall = (id, field, val) => { 
-        const cleanVal = (field === 'l' || field === 'b') ? handleMathInput(val) : val; 
-        setData(prev => ({ ...prev, customWalls: (prev.customWalls || []).map(w => w.id === id ? { ...w, [field]: cleanVal } : w) })); 
-    };
-    
+    const addWall = (type) => { const isExt = type === 'exterior'; const newWall = { id: Date.now() + Math.random(), name: isExt ? 'Extra Ext. Wall' : 'Partition Wall', l: '0', b: isExt ? '0.23' : '0.10', h: '3.0', isPlinthExempt: false }; setData(prev => ({ ...prev, customWalls: [...(prev.customWalls || []), newWall] })); };
+    const updateCustomWall = (id, field, val) => { const cleanVal = (field === 'l' || field === 'b') ? handleMathInput(val) : val; setData(prev => ({ ...prev, customWalls: (prev.customWalls || []).map(w => w.id === id ? { ...w, [field]: cleanVal } : w) })); };
     const toggleCustomWallExempt = (id) => setData(prev => ({ ...prev, customWalls: (prev.customWalls || []).map(w => w.id === id ? { ...w, isPlinthExempt: !w.isPlinthExempt } : w) }));
-    
     const removeCustomWall = (id) => setData(prev => ({ ...prev, customWalls: (prev.customWalls || []).filter(w => w.id !== id) }));
     
-    const addAdjustment = (mode = 'add') => {
-        const newItem = { 
-            id: Date.now() + Math.random(), // Unique Key 
-            mode: mode, 
-            name: mode === 'deduct' ? 'Lintel Deduction' : 'Parapet Wall', 
-            l: '0', 
-            b: '0.23', 
-            h: mode === 'deduct' ? '0.9' : '1.0' 
-        };
-        setData(prev => ({ 
-            ...prev, 
-            irregularWalls: [...(Array.isArray(prev.irregularWalls) ? prev.irregularWalls : []), newItem] 
-        })); 
-    };
-    
-    const updateAdjustment = (id, field, val) => { 
-        const cleanVal = (field === 'l' || field === 'b') ? handleMathInput(val) : val; 
-        setData(prev => ({ 
-            ...prev, 
-            irregularWalls: (prev.irregularWalls || []).map(w => (w && w.id === id) ? { ...w, [field]: cleanVal } : w) 
-        })); 
-    };
-    
-    const removeAdjustment = (id) => {
-        setData(prev => ({ 
-            ...prev, 
-            irregularWalls: (prev.irregularWalls || []).filter(w => w && w.id !== id) 
-        }));
-    };
+    const addAdjustment = (mode = 'add') => { const newItem = { id: Date.now() + Math.random(), mode, name: mode === 'deduct' ? 'Deduction in Wall' : 'Addition in Wall', l: '0', b: '0.23', h: mode === 'deduct' ? '0.9' : '1.0' }; setData(prev => ({ ...prev, irregularWalls: [...(Array.isArray(prev.irregularWalls) ? prev.irregularWalls : []), newItem] })); };
+    const updateAdjustment = (id, field, val) => { const cleanVal = (field === 'l' || field === 'b') ? handleMathInput(val) : val; setData(prev => ({ ...prev, irregularWalls: (prev.irregularWalls || []).map(w => (w && w.id === id) ? { ...w, [field]: cleanVal } : w) })); };
+    const removeAdjustment = (id) => { setData(prev => ({ ...prev, irregularWalls: (prev.irregularWalls || []).filter(w => w && w.id !== id) })); };
 
-    const addMainBeam = (type) => { 
-        const newBeam = { id: Date.now() + Math.random(), l: '', b: 0.23, d: 0.45 }; 
-        setData(prev => ({ ...prev, mainBeams: { ...prev.mainBeams, [type]: [...(prev.mainBeams[type] || []), newBeam] } })); 
-    };
+    const addMainBeam = (type) => { const newBeam = { id: Date.now() + Math.random(), l: '', b: 0.23, d: 0.45 }; setData(prev => ({ ...prev, mainBeams: { ...prev.mainBeams, [type]: [...(prev.mainBeams[type] || []), newBeam] } })); };
     const updateMainBeam = (type, id, field, val) => { const cleanVal = (field === 'l') ? handleMathInput(val) : val; setData(prev => ({ ...prev, mainBeams: { ...prev.mainBeams, [type]: prev.mainBeams[type].map(b => b.id === id ? { ...b, [field]: cleanVal } : b) } })); };
     const removeMainBeam = (type, id) => { setData(prev => ({ ...prev, mainBeams: { ...prev.mainBeams, [type]: prev.mainBeams[type].filter(b => b.id !== id) } })); };
     const updateOpenAreaBeam = (id, field, val) => { const cleanVal = (field === 'l' || field === 'b' || field === 'd' || field === 'heightFromFloor') ? handleMathInput(val) : val; setData(prev => ({ ...prev, openAreaBeams: prev.openAreaBeams.map(b => b.id === id ? { ...b, [field]: cleanVal } : b) })); };
@@ -280,7 +239,7 @@ export default function PlinthDataInput({
     
     return (
         <div className="space-y-8">
-            {/* BASE DIMENSIONS */}
+            {/* Base Dimensions & Wall Schedule */}
             <div className="bg-gray-50 p-6 rounded-xl border border-gray-200">
                 <h4 className="text-sm font-bold text-gray-700 flex items-center gap-2 mb-4"><Ruler size={16}/> Base Dimensions</h4>
                 <div className="grid grid-cols-2 gap-6">
@@ -289,7 +248,6 @@ export default function PlinthDataInput({
                 </div>
             </div>
 
-            {/* WALL SCHEDULE */}
             <div className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm">
                 <div className="bg-gray-100 p-3 border-b border-gray-200"><h4 className="text-sm font-bold text-gray-700 flex items-center gap-2"><BrickWall size={16}/> Wall Schedule</h4></div>
                 <div className="grid grid-cols-12 bg-gray-50 p-2 text-[10px] font-bold text-gray-500 uppercase tracking-wider border-b">
@@ -298,10 +256,8 @@ export default function PlinthDataInput({
                 <div className="divide-y divide-gray-100">
                     <WallRow label="Main Exterior Wall" data={data.extWall} onChange={(f, v) => updateBaseWall('extWall', f, v)} readOnlyLB={isGroundFloor} tag={isGroundFloor ? "Auto" : "Manual"} tagColor="bg-blue-100 text-blue-700" evaluateMath={evaluateMath}/>
                     <WallRow label="Main Interior Wall" data={data.intWall} onChange={(f, v) => updateBaseWall('intWall', f, v)} readOnlyLB={isGroundFloor} tag={isGroundFloor ? "Auto" : "Manual"} tagColor="bg-green-100 text-green-700" evaluateMath={evaluateMath}/>
-                    
-                    {/* SAFE RENDER: CUSTOM WALLS */}
                     {Array.isArray(data.customWalls) && data.customWalls.map(w => {
-                        if (!w) return null; // Skip invalid
+                        if (!w) return null;
                         return (
                             <div key={w.id} className="grid grid-cols-12 gap-2 p-2 items-center bg-orange-50 border-b border-orange-100"> 
                                 <div className="col-span-4"><input className="w-full p-1 border rounded text-xs font-bold" value={w.name} onChange={(e) => updateCustomWall(w.id, 'name', e.target.value)} /></div>
@@ -319,29 +275,22 @@ export default function PlinthDataInput({
                         );
                     })}
                 </div>
-                <div className="bg-gray-800 text-white p-3 flex justify-between items-center text-xs shadow-md">
-                    <div className="flex gap-4"><span>Total Length: <span className="text-yellow-400 font-bold">{safeFloat(stats.totalWallLen)} m</span></span><span>|</span><span>Total Area (2 sides): <span className="text-yellow-400 font-bold">{safeFloat(stats.scheduleArea)} m²</span></span></div>
-                    <span>Total Volume: <span className="text-yellow-400 font-mono font-bold text-sm">{safeFloat(stats.scheduleVol)} m³</span></span>
-                </div>
                 <div className="p-2 border-t border-gray-100 bg-gray-50 flex gap-2">
                     <button onClick={() => addWall('exterior')} className="flex-1 text-xs text-blue-700 border border-blue-200 bg-white font-bold py-2 rounded shadow-sm hover:bg-blue-50 transition-colors"><Home className="inline mr-1" size={14}/> Add Ext. Wall</button>
                     <button onClick={() => addWall('partition')} className="flex-1 text-xs text-green-700 border border-green-200 bg-white font-bold py-2 rounded shadow-sm hover:bg-green-50 transition-colors"><Grid className="inline mr-1" size={14}/> Add Partition</button>
                 </div>
             </div>
 
-            {/* WALL ADJUSTMENTS */}
             <div className="bg-orange-50/50 rounded-xl border border-orange-200 p-4">
                  <div className="flex justify-between items-center mb-2">
                     <h4 className="text-sm font-bold text-orange-900 flex items-center gap-2"><Calculator size={16}/> Wall Adjustments</h4>
                     <div className="flex gap-2">
-                        <button onClick={() => addAdjustment('add')} className="text-xs bg-white text-green-700 border border-green-300 px-3 py-1 rounded font-bold">+ Extra</button>
-                        <button onClick={() => addAdjustment('deduct')} className="text-xs bg-white text-red-700 border border-red-300 px-3 py-1 rounded font-bold">- Height</button>
+                        <button onClick={() => addAdjustment('add')} className="text-xs bg-white text-green-700 border border-green-300 px-3 py-1 rounded font-bold">+ Addition in Wall</button>
+                        <button onClick={() => addAdjustment('deduct')} className="text-xs bg-white text-red-700 border border-red-300 px-3 py-1 rounded font-bold">- Deduction in Wall</button>
                     </div>
                 </div>
-                
-                {/* SAFE RENDER: ADJUSTMENTS */}
                 {Array.isArray(data.irregularWalls) && data.irregularWalls.map(w => {
-                    if (!w) return null; // Skip invalid
+                    if (!w) return null;
                     return (
                         <div key={w.id} className="flex gap-2 items-center p-2 mb-2 rounded border bg-white">
                             <div className={`w-6 h-6 flex items-center justify-center rounded-full ${w.mode === 'deduct' ? 'bg-red-100 text-red-600' : 'bg-green-100 text-green-600'}`}>{w.mode === 'deduct' ? <ArrowDown size={14}/> : <ArrowUp size={14}/>}</div>
@@ -353,11 +302,6 @@ export default function PlinthDataInput({
                         </div>
                     );
                 })}
-                
-                <div className="mt-3 bg-orange-100 p-2 rounded text-xs font-bold text-orange-900 flex justify-between items-center border border-orange-200">
-                    <span>Net Adjustment Area: <span className={stats.adjustArea < 0 ? 'text-red-600' : 'text-green-700'}>{stats.adjustArea >= 0 ? '+' : ''}{safeFloat(stats.adjustArea)} m²</span></span>
-                    <span>Net Adjustment Volume: <span className={stats.adjustVol < 0 ? 'text-red-600' : 'text-green-700'}>{stats.adjustVol >= 0 ? '+' : ''}{safeFloat(stats.adjustVol)} m³</span></span>
-                </div>
             </div>
 
             <OpeningManager floorName={floorName} openings={data.openings} setOpenings={(newOpenings) => setData(prev => ({...prev, openings: newOpenings}))} wallOptions={availableWallWidths} />
@@ -366,6 +310,11 @@ export default function PlinthDataInput({
                 openAreaBeams={data.openAreaBeams}
                 mainBeams={data.mainBeams}
                 lintels={data.lintels}
+                
+                // NEW: Pass all columns and calculated total column deduction volume
+                allColumns={projectConcealedColumns} 
+                columnVolume={safeFloat(stats.columnVol)}
+
                 totalWallLength={safeFloat(stats.totalWallLen)}
                 volConcealed={safeFloat(stats.beamVolConcealed)}
                 volDrop={safeFloat(stats.beamVolDrop)}
@@ -395,8 +344,14 @@ export default function PlinthDataInput({
                         <div className="flex justify-between items-center p-2.5 bg-orange-50 border-b border-indigo-50 text-blue-600"><span>2. Wall Adjustments (Add/Deduct):</span> <span>{stats.adjustVol >= 0 ? '+' : ''}{safeFloat(stats.adjustVol)}</span></div>
                         <div className="flex justify-between items-center p-2.5 bg-white border-b border-indigo-50 text-red-500"><span>3. Less: Openings Volume:</span> <span>-{safeFloat(stats.openVol)}</span></div>
                         <div className="flex justify-between items-center p-2.5 bg-orange-50 border-b border-indigo-50 text-red-500"><span>4. Less: Lintel Volume:</span> <span>-{safeFloat(stats.lintelVol)}</span></div>
-                        <div className="flex justify-between items-center p-2.5 bg-white border-b border-indigo-50 text-red-500"><span>5. Less: Beam Volume (Concealed + Drop + Open):</span> <span>-{safeFloat(stats.beamVolTotal)}</span></div>
-                        <div className="flex justify-between items-center p-2.5 bg-orange-50 border-b border-indigo-50 text-red-500"><span>6. Less: Columns Deduction:</span><div className="flex items-center gap-1"><span>-</span><input type="text" className="w-20 p-1 text-right text-xs border border-red-200 rounded bg-white focus:outline-none focus:ring-1 focus:ring-red-300" value={data.deductionCols} onChange={(e) => updateField('deductionCols', e.target.value)} placeholder="0.00"/></div></div>
+                        <div className="flex justify-between items-center p-2.5 bg-white border-b border-indigo-50 text-red-500"><span>5. Less: Concealed Beam Volume:</span> <span>-{safeFloat(stats.beamVolConcealed)}</span></div>
+                        
+                        {/* AUTO-FETCHED COLUMN DEDUCTION */}
+                        <div className="flex justify-between items-center p-2.5 bg-orange-50 border-b border-indigo-50 text-red-500">
+                            <span>6. Less: Columns Deduction (Auto-fetched):</span>
+                            <span className="font-bold">-{safeFloat(stats.columnVol)}</span>
+                        </div>
+                        
                         <div className="flex justify-between items-center p-2.5 bg-white text-red-500"><span>7. Less: Other Deductions:</span><div className="flex items-center gap-1"><span>-</span><input type="text" className="w-20 p-1 text-right text-xs border border-red-200 rounded bg-white focus:outline-none focus:ring-1 focus:ring-red-300" value={data.deductionVol} onChange={(e) => updateField('deductionVol', e.target.value)} placeholder="0.00"/></div></div>
                     </div>
                 </div>
@@ -425,7 +380,7 @@ export default function PlinthDataInput({
     );
 }
 
-// ... WallRow, InputGroup, handleSave ...
+// ... WallRow and InputGroup Components ...
 const WallRow = ({ label, data, onChange, readOnlyLB, tag, tagColor, evaluateMath }) => (
     <div className="grid grid-cols-12 gap-2 p-2 items-center border-b border-gray-50 last:border-0 hover:bg-gray-50">
         <div className="col-span-4 pl-2 text-xs font-bold text-gray-700">{label}</div>
