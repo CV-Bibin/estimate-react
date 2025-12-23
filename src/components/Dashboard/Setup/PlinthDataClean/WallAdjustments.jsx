@@ -1,27 +1,15 @@
 import React, { useState, useEffect, useMemo } from "react";
-import {
-  Maximize2,
-  Ruler,
-  BrickWall,
-  Calculator,
-  ArrowDown,
-  ArrowUp,
-  Grid,
-  Home,
-  Trash2,
-  Layers, // Added Layers icon
-} from "lucide-react";
 
 // --- Imported Managers ---
 import OpeningManager from "./OpeningManager";
 import BeamLintelManager from "./BeamLintelManager";
-import SlabParapetManager from "./SlabParapetManager"; // <--- NEW IMPORT
 import ColumnDeductionManager from "../Setup/ColumnDeductionManager";
-import FinalEstimates from "../Setup/FinalEstimates"; 
+import FinalEstimates from "../Setup/FinalEstimates";
 
-// --- Imported UI Components ---
-import InputGroup from "../Setup/PlinthDataClean/InputGroup";
-import WallRow from "../Setup/PlinthDataClean/WallRow";
+// --- Imported Components ---
+import BaseDimensionsInput from "./BaseDimensionsInput";
+import WallSchedule from "./WallSchedule";
+import WallAdjustments from "./WallAdjustments";
 
 export default function PlinthDataInput({
   floorName,
@@ -136,9 +124,6 @@ export default function PlinthDataInput({
       mainBeams: initialData.mainBeams || { concealed: [], drop: [] },
       lintels: initialData.lintels || { deductions: [], thickness: 0.15 },
       manualColumnDeductions: Array.isArray(initialData.manualColumnDeductions) ? initialData.manualColumnDeductions : [],
-      
-      // --- NEW SLAB DATA ---
-      slabData: initialData.slabData || null, 
     };
   });
 
@@ -165,11 +150,6 @@ export default function PlinthDataInput({
     beamVolTotal: 0,
     columnVol: 0,
     concreteVolume: 0,
-    
-    // --- NEW STATS FOR SLAB ---
-    roofSlabVolume: 0,
-    miscSlabVolume: 0,
-    parapetVolume: 0,
   });
 
   useEffect(() => {}, [floorName]);
@@ -335,48 +315,6 @@ export default function PlinthDataInput({
 
     const totalNetArea = scheduleArea + adjustArea - openAreaDed - manAreaDed;
 
-    // --- 7. SLAB & PARAPET CALCULATION (NEW LOGIC) ---
-    let roofVol = 0;
-    let parapetVol = 0;
-    let miscSlabVol = 0;
-
-    if (data.slabData) {
-        const sd = data.slabData;
-        const pArea = val(data.plinthArea);
-        const pPerim = val(data.plinthPerimeter);
-        const overhangArea = pPerim * (parseFloat(sd.overhangWidth) || 0);
-        
-        let deductArea = 0;
-        if(projectOpenAreas.length > 0) {
-             projectOpenAreas.forEach(oa => {
-                 const isNoRoof = oa.hasRoof === false;
-                 const isOpen = (oa.type || "").toLowerCase().includes('open');
-                 const isCourt = (oa.type || "").toLowerCase().includes('courtyard');
-                 // Handles both 'area' and 'floorArea' for compatibility
-                 const areaVal = evaluateMath(oa.floorArea || oa.area); 
-                 
-                 if (isNoRoof || isOpen || isCourt) {
-                     deductArea += areaVal;
-                 }
-             });
-        }
-
-        const netRoofArea = Math.max(0, (pArea + overhangArea) - deductArea);
-        roofVol = netRoofArea * (parseFloat(sd.roofThickness) || 0);
-
-        // Misc Slabs Volume
-        if (Array.isArray(sd.miscSlabs)) {
-            miscSlabVol = sd.miscSlabs.reduce((sum, s) => {
-                return sum + (val(s.l) * val(s.b) * val(s.nos) * val(s.thickness));
-            }, 0);
-        }
-
-        // Parapet Volume
-        const roofPerim = pPerim + (8 * (parseFloat(sd.overhangWidth) || 0));
-        const paraLen = Math.max(0, roofPerim - (parseFloat(sd.parapetDeductLen) || 0));
-        parapetVol = paraLen * (parseFloat(sd.parapetHeight) || 0) * (parseFloat(sd.parapetThick) || 0);
-    }
-
     setStats({
       scheduleVol,
       scheduleArea,
@@ -399,15 +337,9 @@ export default function PlinthDataInput({
       beamVolOpen: volOpen,
       beamVolTotal: beamVolTotal,
       columnVol: autoColumnVol,
-      
-      // New Stats
-      roofSlabVolume: roofVol,
-      miscSlabVolume: miscSlabVol,
-      parapetVolume: parapetVol,
-      
-      concreteVolume: beamVolTotal + netLintelVol + autoColumnVol + roofVol + miscSlabVol,
+      concreteVolume: beamVolTotal + netLintelVol + autoColumnVol,
     });
-  }, [data, autoColumnVol, projectOpenAreas]); // Added projectOpenAreas to dependency array
+  }, [data, autoColumnVol]);
 
   // --- HANDLERS ---
   const updateBaseWall = (type, field, val) => {
@@ -604,7 +536,7 @@ export default function PlinthDataInput({
     }));
   }, [data.openings]);
 
-  // NEW: Combine Drop and Open Beams for Visible Beam Plaster Calculation
+  // Combine Drop and Open Beams for Visible Beam Plaster Calculation
   const visibleBeams = useMemo(() => {
     return [
         ...(data.mainBeams?.drop || []), 
@@ -612,233 +544,44 @@ export default function PlinthDataInput({
     ];
   }, [data.mainBeams, data.openAreaBeams]);
 
+  // *** FILTER OPEN COLUMNS ***
+  // Filter the manualColumnDeductions list to find only those marked as 'open'
+  const visibleColumns = useMemo(() => {
+    return (data.manualColumnDeductions || []).filter(c => c.type === 'open');
+  }, [data.manualColumnDeductions]);
+
   return (
     <div className="space-y-8">
       {/* 1. Base Dimensions */}
-      <div className="bg-gray-50 p-6 rounded-xl border border-gray-200">
-        <h4 className="text-sm font-bold text-gray-700 flex items-center gap-2 mb-4">
-          <Ruler size={16} /> Base Dimensions
-        </h4>
-        <div className="grid grid-cols-2 gap-6">
-          <InputGroup
-            label="Total Plinth Area (m²)"
-            value={data.plinthArea}
-            onChange={(v) => updateField("plinthArea", v)}
-            icon={Maximize2}
-            placeholder="e.g. 120"
-          />
-          <InputGroup
-            label="Plinth Perimeter (m)"
-            value={data.plinthPerimeter}
-            onChange={(v) => updateField("plinthPerimeter", v)}
-            icon={Ruler}
-            placeholder="e.g. 45"
-          />
-        </div>
-      </div>
+      <BaseDimensionsInput
+        plinthArea={data.plinthArea}
+        plinthPerimeter={data.plinthPerimeter}
+        updateField={updateField}
+      />
 
       {/* 2. Wall Schedule */}
-      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm">
-        <div className="bg-gray-100 p-3 border-b border-gray-200">
-          <h4 className="text-sm font-bold text-gray-700 flex items-center gap-2">
-            <BrickWall size={16} /> Wall Schedule
-          </h4>
-        </div>
-        <div className="grid grid-cols-12 bg-gray-50 p-2 text-[10px] font-bold text-gray-500 uppercase tracking-wider border-b">
-          <div className="col-span-4 pl-2">Name</div>
-          <div className="col-span-2 text-center">Length</div>
-          <div className="col-span-2 text-center">Width</div>
-          <div className="col-span-2 text-center">Height</div>
-          <div className="col-span-2 text-center">Status</div>
-        </div>
-        <div className="divide-y divide-gray-100">
-          <WallRow
-            label="Main Exterior Wall"
-            data={data.extWall}
-            onChange={(f, v) => updateBaseWall("extWall", f, v)}
-            readOnlyLB={isGroundFloor}
-            tag={isGroundFloor ? "Auto" : "Manual"}
-            tagColor="bg-blue-100 text-blue-700"
-            evaluateMath={evaluateMath}
-          />
-          <WallRow
-            label="Main Interior Wall"
-            data={data.intWall}
-            onChange={(f, v) => updateBaseWall("intWall", f, v)}
-            readOnlyLB={isGroundFloor}
-            tag={isGroundFloor ? "Auto" : "Manual"}
-            tagColor="bg-green-100 text-green-700"
-            evaluateMath={evaluateMath}
-          />
-          {/* Custom Walls List */}
-          {Array.isArray(data.customWalls) &&
-            data.customWalls.map((w) => {
-              if (!w) return null;
-              return (
-                <div
-                  key={w.id}
-                  className="grid grid-cols-12 gap-2 p-2 items-center bg-orange-50 border-b border-orange-100"
-                >
-                  <div className="col-span-4">
-                    <input
-                      className="w-full p-1 border rounded text-xs font-bold"
-                      value={w.name}
-                      onChange={(e) =>
-                        updateCustomWall(w.id, "name", e.target.value)
-                      }
-                    />
-                  </div>
-                  <div className="col-span-2 relative group">
-                    <input
-                      type="text"
-                      className="w-full p-1 border rounded text-center text-xs bg-white"
-                      value={w.l}
-                      onChange={(e) =>
-                        updateCustomWall(w.id, "l", e.target.value)
-                      }
-                    />
-                    {evaluateMath(w.l) !== parseFloat(w.l) && w.l !== "" && (
-                      <div className="absolute top-full left-0 w-full text-center text-[9px] text-gray-500 bg-white border z-10 shadow-sm rounded">
-                        = {evaluateMath(w.l).toFixed(2)}
-                      </div>
-                    )}
-                  </div>
-                  <div className="col-span-2">
-                    <input
-                      type="number"
-                      className="w-full p-1 border rounded text-center text-xs bg-white"
-                      value={w.b}
-                      onChange={(e) =>
-                        updateCustomWall(w.id, "b", e.target.value)
-                      }
-                    />
-                  </div>
-                  <div className="col-span-2">
-                    <input
-                      type="number"
-                      className="w-full p-1 border rounded text-center text-sm font-bold bg-white"
-                      value={w.h}
-                      onChange={(e) =>
-                        updateCustomWall(w.id, "h", e.target.value)
-                      }
-                    />
-                  </div>
-                  <div className="col-span-2 flex justify-center items-center gap-2">
-                    <button
-                      onClick={() => toggleCustomWallExempt(w.id)}
-                      className={`text-[9px] px-2 py-0.5 rounded border font-bold ${
-                        w.isPlinthExempt
-                          ? "bg-red-100 text-red-700"
-                          : "bg-white text-gray-500"
-                      }`}
-                    >
-                      {w.isPlinthExempt ? "Not in Plinth" : "Standard"}
-                    </button>
-                    <button
-                      onClick={() => removeCustomWall(w.id)}
-                      className="text-red-400 hover:text-red-600 p-1"
-                    >
-                      <Trash2 size={14} />
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
-        </div>
-        <div className="p-2 border-t border-gray-100 bg-gray-50 flex gap-2">
-          <button
-            onClick={() => addWall("exterior")}
-            className="flex-1 text-xs text-blue-700 border border-blue-200 bg-white font-bold py-2 rounded shadow-sm hover:bg-blue-50 transition-colors"
-          >
-            <Home className="inline mr-1" size={14} /> Add Ext. Wall
-          </button>
-          <button
-            onClick={() => addWall("partition")}
-            className="flex-1 text-xs text-green-700 border border-green-200 bg-white font-bold py-2 rounded shadow-sm hover:bg-green-50 transition-colors"
-          >
-            <Grid className="inline mr-1" size={14} /> Add Partition
-          </button>
-        </div>
-      </div>
+      <WallSchedule
+        extWall={data.extWall}
+        intWall={data.intWall}
+        customWalls={data.customWalls}
+        isGroundFloor={isGroundFloor}
+        updateBaseWall={updateBaseWall}
+        addWall={addWall}
+        updateCustomWall={updateCustomWall}
+        toggleCustomWallExempt={toggleCustomWallExempt}
+        removeCustomWall={removeCustomWall}
+        evaluateMath={evaluateMath}
+      />
 
       {/* 3. Wall Adjustments */}
-      <div className="bg-orange-50/50 rounded-xl border border-orange-200 p-4">
-        <div className="flex justify-between items-center mb-2">
-          <h4 className="text-sm font-bold text-orange-900 flex items-center gap-2">
-            <Calculator size={16} /> Wall Adjustments
-          </h4>
-          <div className="flex gap-2">
-            <button
-              onClick={() => addAdjustment("add")}
-              className="text-xs bg-white text-green-700 border border-green-300 px-3 py-1 rounded font-bold"
-            >
-              + Addition in Wall
-            </button>
-            <button
-              onClick={() => addAdjustment("deduct")}
-              className="text-xs bg-white text-red-700 border border-red-300 px-3 py-1 rounded font-bold"
-            >
-              - Deduction in Wall
-            </button>
-          </div>
-        </div>
-        {Array.isArray(data.irregularWalls) &&
-          data.irregularWalls.map((w) => {
-            if (!w) return null;
-            return (
-              <div
-                key={w.id}
-                className="flex gap-2 items-center p-2 mb-2 rounded border bg-white"
-              >
-                <div
-                  className={`w-6 h-6 flex items-center justify-center rounded-full ${
-                    w.mode === "deduct"
-                      ? "bg-red-100 text-red-600"
-                      : "bg-green-100 text-green-600"
-                  }`}
-                >
-                  {w.mode === "deduct" ? (
-                    <ArrowDown size={14} />
-                  ) : (
-                    <ArrowUp size={14} />
-                  )}
-                </div>
-                <input
-                  className="flex-[2] p-1 text-xs border rounded"
-                  value={w.name}
-                  onChange={(e) =>
-                    updateAdjustment(w.id, "name", e.target.value)
-                  }
-                />
-                <input
-                  type="text"
-                  className="flex-1 p-1 text-xs border rounded text-center"
-                  value={w.l}
-                  onChange={(e) => updateAdjustment(w.id, "l", e.target.value)}
-                />
-                <input
-                  type="number"
-                  className="flex-1 p-1 text-xs border rounded text-center"
-                  value={w.b}
-                  onChange={(e) => updateAdjustment(w.id, "b", e.target.value)}
-                />
-                <input
-                  type="number"
-                  className="flex-1 p-1 text-xs border rounded text-center font-bold"
-                  value={w.h}
-                  onChange={(e) => updateAdjustment(w.id, "h", e.target.value)}
-                />
-                <button
-                  onClick={() => removeAdjustment(w.id)}
-                  className="text-red-400 p-1"
-                >
-                  <Trash2 size={14} />
-                </button>
-              </div>
-            );
-          })}
-      </div>
+      <WallAdjustments
+        irregularWalls={data.irregularWalls}
+        addAdjustment={addAdjustment}
+        updateAdjustment={updateAdjustment}
+        removeAdjustment={removeAdjustment}
+      />
 
+      {/* 4. Managers */}
       <OpeningManager
         floorName={floorName}
         openings={data.openings}
@@ -872,18 +615,6 @@ export default function PlinthDataInput({
         evaluateMath={evaluateMath}
       />
 
-      {/* --- NEW SLAB PARAPET MANAGER --- */}
-      <SlabParapetManager 
-        plinthArea={evaluateMath(data.plinthArea)} 
-        plinthPerimeter={evaluateMath(data.plinthPerimeter)} 
-        projectAreas={projectOpenAreas} 
-        slabData={data.slabData} 
-        setSlabData={(newSlabData) => { 
-            const resolvedData = typeof newSlabData === 'function' ? newSlabData(data.slabData) : newSlabData; 
-            setData(prev => ({ ...prev, slabData: resolvedData })); 
-        }} 
-      />
-
       <ColumnDeductionManager
         manualColumnDeductions={
           Array.isArray(data.manualColumnDeductions)
@@ -910,33 +641,7 @@ export default function PlinthDataInput({
         safeNum={safeNum}
       />
 
-      {/* --- NEW SECTION: Concrete & Roofing Results --- */}
-      <div className="bg-purple-50 border border-purple-200 rounded-xl p-4 shadow-sm mb-8">
-           <div className="flex justify-between items-center border-b border-purple-200 pb-2 mb-2">
-               <h4 className="font-bold text-sm text-purple-900 flex items-center gap-2"><Layers size={16}/> Concrete & Roofing Estimates</h4>
-               <span className="text-xs bg-white px-2 py-1 rounded border border-purple-200 font-bold text-purple-700">Total: {safeFloat(stats.concreteVolume)} m³</span>
-           </div>
-           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-xs">
-               <div className="bg-white p-2 rounded border border-purple-100">
-                   <div className="text-gray-400 font-bold uppercase text-[10px]">Roof Slab</div>
-                   <div className="text-lg font-black text-purple-700">{safeFloat(stats.roofSlabVolume)} m³</div>
-               </div>
-               <div className="bg-white p-2 rounded border border-orange-100">
-                   <div className="text-gray-400 font-bold uppercase text-[10px]">Misc. Slabs</div>
-                   <div className="text-lg font-black text-orange-700">{safeFloat(stats.miscSlabVolume)} m³</div>
-               </div>
-               <div className="bg-white p-2 rounded border border-cyan-100">
-                   <div className="text-gray-400 font-bold uppercase text-[10px]">Beams/Lintels</div>
-                   <div className="text-lg font-black text-cyan-700">{safeFloat(stats.beamVolTotal + stats.lintelVol)} m³</div>
-               </div>
-               <div className="bg-white p-2 rounded border border-slate-200">
-                   <div className="text-gray-400 font-bold uppercase text-[10px]">Parapet (Brick)</div>
-                   <div className="text-lg font-black text-slate-700">{safeFloat(stats.parapetVolume)} m³</div>
-               </div>
-           </div>
-      </div>
-
-      {/* 4. Final Estimates */}
+      {/* 5. Final Estimates */}
       <FinalEstimates
         stats={stats}
         data={data}
@@ -944,7 +649,7 @@ export default function PlinthDataInput({
         openings={formattedOpenings}
         irregularWalls={data.irregularWalls || []}
         beams={visibleBeams}
-        columns={data.manualColumnDeductions || []}
+        columns={visibleColumns}
         floorName={floorName}
         updateField={updateField}
         onSaveClick={handleSaveTrigger}
